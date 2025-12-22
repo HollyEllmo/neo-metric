@@ -1,0 +1,46 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Build artifacts
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test artifacts
+coverage.out
+coverage.html
+*.test
+
+# Documentation
+*.md
+!README.md
+
+# Docker files (avoid recursive builds)
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Environment files (loaded at runtime, not build time)
+.env
+.env.*
+!.env.example
+
+# Temporary files
+tmp/
+*.tmp
+*.log
+
+# macOS
+.DS_Store
+
+# Test directories
+tests/

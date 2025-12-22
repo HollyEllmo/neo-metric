@@ -2,7 +2,7 @@
 -include .env
 export
 
-.PHONY: build run test test-e2e test-e2e-create test-e2e-get test-e2e-list test-e2e-update test-e2e-delete test-e2e-publish test-e2e-schedule test-e2e-draft lint clean deps dev migrate-up migrate-down migrate-status migrate-create
+.PHONY: build run test test-e2e test-e2e-create test-e2e-get test-e2e-list test-e2e-update test-e2e-delete test-e2e-publish test-e2e-schedule test-e2e-draft lint clean deps dev migrate-up migrate-down migrate-status migrate-create docker-build docker-up docker-down docker-restart docker-rebuild docker-logs docker-ps
 
 # Binary name
 BINARY_NAME=neo-metric
@@ -130,6 +130,47 @@ migrate-status:
 migrate-create:
 	@echo "Creating migration $(name)..."
 	goose -dir $(MIGRATIONS_DIR) create $(name) sql
+
+# Docker settings
+DOCKER_COMPOSE_API=docker-compose -f docker-compose.api.yml
+DOCKER_IMAGE_NAME=neo-metric-api
+
+## docker-build: Build the API Docker image
+docker-build:
+	@echo "Building Docker image..."
+	docker build -t $(DOCKER_IMAGE_NAME) .
+
+## docker-up: Start the API container
+docker-up:
+	@echo "Starting API container..."
+	$(DOCKER_COMPOSE_API) up -d
+	@echo "API is running at http://localhost:$${SERVER_PORT:-8080}"
+
+## docker-down: Stop the API container
+docker-down:
+	@echo "Stopping API container..."
+	$(DOCKER_COMPOSE_API) down
+
+## docker-restart: Restart the API container
+docker-restart:
+	@echo "Restarting API container..."
+	$(DOCKER_COMPOSE_API) restart
+
+## docker-rebuild: Rebuild and restart API (use after git pull)
+docker-rebuild:
+	@echo "Rebuilding and restarting API..."
+	$(DOCKER_COMPOSE_API) down
+	$(DOCKER_COMPOSE_API) build --no-cache
+	$(DOCKER_COMPOSE_API) up -d
+	@echo "API rebuilt and running at http://localhost:$${SERVER_PORT:-8080}"
+
+## docker-logs: Show API container logs
+docker-logs:
+	$(DOCKER_COMPOSE_API) logs -f
+
+## docker-ps: Show API container status
+docker-ps:
+	$(DOCKER_COMPOSE_API) ps
 
 ## clean: Clean build artifacts
 clean:
