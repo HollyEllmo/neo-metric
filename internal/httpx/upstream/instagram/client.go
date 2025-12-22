@@ -366,3 +366,223 @@ func joinStrings(strs []string, sep string) string {
 	}
 	return result
 }
+
+// ============================================================================
+// Comments API
+// ============================================================================
+
+// CommentData represents a comment from Instagram API
+type CommentData struct {
+	ID           string    `json:"id"`
+	Text         string    `json:"text"`
+	Username     string    `json:"username"`
+	Timestamp    time.Time `json:"timestamp"`
+	LikeCount    int       `json:"like_count"`
+	Hidden       bool      `json:"hidden"`
+	RepliesCount int       `json:"replies_count,omitempty"`
+}
+
+// GetCommentsInput represents input for getting comments
+type GetCommentsInput struct {
+	MediaID     string
+	AccessToken string
+	Limit       int
+	After       string // Cursor for pagination
+}
+
+// GetCommentsOutput represents output from getting comments
+type GetCommentsOutput struct {
+	Data   []CommentData `json:"data"`
+	Paging *Paging       `json:"paging,omitempty"`
+}
+
+// Paging represents pagination info from Instagram API
+type Paging struct {
+	Cursors struct {
+		Before string `json:"before"`
+		After  string `json:"after"`
+	} `json:"cursors"`
+	Next string `json:"next,omitempty"`
+}
+
+// GetComments retrieves comments for a media
+// GET /{media-id}/comments
+func (c *Client) GetComments(ctx context.Context, in GetCommentsInput) (*GetCommentsOutput, error) {
+	endpoint := fmt.Sprintf("%s/%s/%s/comments", c.baseURL, c.apiVersion, in.MediaID)
+
+	params := url.Values{}
+	params.Set("access_token", in.AccessToken)
+	params.Set("fields", "id,text,username,timestamp,like_count,hidden")
+
+	if in.Limit > 0 {
+		params.Set("limit", fmt.Sprintf("%d", in.Limit))
+	}
+	if in.After != "" {
+		params.Set("after", in.After)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+params.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	var out GetCommentsOutput
+	if err := c.do(req, &out); err != nil {
+		return nil, err
+	}
+
+	return &out, nil
+}
+
+// GetCommentRepliesInput represents input for getting comment replies
+type GetCommentRepliesInput struct {
+	CommentID   string
+	AccessToken string
+	Limit       int
+	After       string
+}
+
+// GetCommentReplies retrieves replies to a comment
+// GET /{comment-id}/replies
+func (c *Client) GetCommentReplies(ctx context.Context, in GetCommentRepliesInput) (*GetCommentsOutput, error) {
+	endpoint := fmt.Sprintf("%s/%s/%s/replies", c.baseURL, c.apiVersion, in.CommentID)
+
+	params := url.Values{}
+	params.Set("access_token", in.AccessToken)
+	params.Set("fields", "id,text,username,timestamp,like_count,hidden")
+
+	if in.Limit > 0 {
+		params.Set("limit", fmt.Sprintf("%d", in.Limit))
+	}
+	if in.After != "" {
+		params.Set("after", in.After)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+params.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	var out GetCommentsOutput
+	if err := c.do(req, &out); err != nil {
+		return nil, err
+	}
+
+	return &out, nil
+}
+
+// ReplyToCommentInput represents input for replying to a comment
+type ReplyToCommentInput struct {
+	CommentID   string
+	AccessToken string
+	Message     string
+}
+
+// ReplyToCommentOutput represents output from replying to a comment
+type ReplyToCommentOutput struct {
+	ID string `json:"id"`
+}
+
+// ReplyToComment posts a reply to a comment
+// POST /{comment-id}/replies
+func (c *Client) ReplyToComment(ctx context.Context, in ReplyToCommentInput) (*ReplyToCommentOutput, error) {
+	endpoint := fmt.Sprintf("%s/%s/%s/replies", c.baseURL, c.apiVersion, in.CommentID)
+
+	params := url.Values{}
+	params.Set("access_token", in.AccessToken)
+	params.Set("message", in.Message)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"?"+params.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	var out ReplyToCommentOutput
+	if err := c.do(req, &out); err != nil {
+		return nil, err
+	}
+
+	return &out, nil
+}
+
+// DeleteCommentInput represents input for deleting a comment
+type DeleteCommentInput struct {
+	CommentID   string
+	AccessToken string
+}
+
+// DeleteComment deletes a comment
+// DELETE /{comment-id}
+func (c *Client) DeleteComment(ctx context.Context, in DeleteCommentInput) error {
+	endpoint := fmt.Sprintf("%s/%s/%s", c.baseURL, c.apiVersion, in.CommentID)
+
+	params := url.Values{}
+	params.Set("access_token", in.AccessToken)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, endpoint+"?"+params.Encode(), nil)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+
+	var result map[string]interface{}
+	return c.do(req, &result)
+}
+
+// HideCommentInput represents input for hiding/unhiding a comment
+type HideCommentInput struct {
+	CommentID   string
+	AccessToken string
+	Hide        bool
+}
+
+// HideComment hides or unhides a comment
+// POST /{comment-id}?hide=true/false
+func (c *Client) HideComment(ctx context.Context, in HideCommentInput) error {
+	endpoint := fmt.Sprintf("%s/%s/%s", c.baseURL, c.apiVersion, in.CommentID)
+
+	params := url.Values{}
+	params.Set("access_token", in.AccessToken)
+	params.Set("hide", fmt.Sprintf("%t", in.Hide))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"?"+params.Encode(), nil)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+
+	var result map[string]interface{}
+	return c.do(req, &result)
+}
+
+// CreateCommentInput represents input for creating a comment on media
+type CreateCommentInput struct {
+	MediaID     string
+	AccessToken string
+	Message     string
+}
+
+// CreateCommentOutput represents output from creating a comment
+type CreateCommentOutput struct {
+	ID string `json:"id"`
+}
+
+// CreateComment creates a new comment on a media
+// POST /{media-id}/comments
+func (c *Client) CreateComment(ctx context.Context, in CreateCommentInput) (*CreateCommentOutput, error) {
+	endpoint := fmt.Sprintf("%s/%s/%s/comments", c.baseURL, c.apiVersion, in.MediaID)
+
+	params := url.Values{}
+	params.Set("access_token", in.AccessToken)
+	params.Set("message", in.Message)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"?"+params.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	var out CreateCommentOutput
+	if err := c.do(req, &out); err != nil {
+		return nil, err
+	}
+
+	return &out, nil
+}

@@ -43,6 +43,8 @@ tags:
     description: Загрузка медиафайлов
   - name: Publications
     description: Управление публикациями Instagram
+  - name: Comments
+    description: Управление комментариями Instagram
   - name: Health
     description: Проверка состояния сервиса
 
@@ -520,6 +522,320 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  # ============================================================================
+  # Comments API
+  # ============================================================================
+
+  /comments/media/{mediaId}:
+    get:
+      tags:
+        - Comments
+      summary: Получить комментарии медиа
+      description: |
+        Получить список комментариев для указанного медиа в Instagram.
+
+        Поддерживает курсорную пагинацию.
+      operationId: getComments
+      parameters:
+        - name: mediaId
+          in: path
+          required: true
+          description: ID медиа в Instagram
+          schema:
+            type: string
+          example: "17895695668004550"
+        - name: account_id
+          in: query
+          required: true
+          description: ID аккаунта для авторизации
+          schema:
+            type: string
+          example: "acc_123"
+        - name: limit
+          in: query
+          description: Количество комментариев (макс. 100)
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: after
+          in: query
+          description: Курсор для пагинации
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Список комментариев
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Невалидный access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Медиа не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      tags:
+        - Comments
+      summary: Создать комментарий
+      description: |
+        Создать новый комментарий к медиа в Instagram.
+
+        **Ограничения:**
+        - Максимальная длина текста: 2200 символов
+        - Комментирование должно быть включено для медиа
+      operationId: createComment
+      parameters:
+        - name: mediaId
+          in: path
+          required: true
+          description: ID медиа в Instagram
+          schema:
+            type: string
+          example: "17895695668004550"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCommentRequest'
+      responses:
+        '201':
+          description: Комментарий создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateCommentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Невалидный access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Комментирование отключено для этого медиа
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Медиа не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /comments/{commentId}/replies:
+    get:
+      tags:
+        - Comments
+      summary: Получить ответы на комментарий
+      description: |
+        Получить список ответов на указанный комментарий.
+
+        Поддерживает курсорную пагинацию.
+      operationId: getReplies
+      parameters:
+        - $ref: '#/components/parameters/CommentId'
+        - name: account_id
+          in: query
+          required: true
+          description: ID аккаунта для авторизации
+          schema:
+            type: string
+          example: "acc_123"
+        - name: limit
+          in: query
+          description: Количество ответов (макс. 100)
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: after
+          in: query
+          description: Курсор для пагинации
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Список ответов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Невалидный access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Комментарий не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      tags:
+        - Comments
+      summary: Ответить на комментарий
+      description: |
+        Создать ответ на комментарий.
+
+        **Ограничения:**
+        - Максимальная длина текста: 2200 символов
+      operationId: replyToComment
+      parameters:
+        - $ref: '#/components/parameters/CommentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplyRequest'
+      responses:
+        '201':
+          description: Ответ создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateCommentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Невалидный access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Комментарий не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /comments/{commentId}:
+    delete:
+      tags:
+        - Comments
+      summary: Удалить комментарий
+      description: |
+        Удалить комментарий из Instagram.
+
+        Можно удалить только свои комментарии или комментарии на своём медиа.
+      operationId: deleteComment
+      parameters:
+        - $ref: '#/components/parameters/CommentId'
+        - name: account_id
+          in: query
+          required: true
+          description: ID аккаунта для авторизации
+          schema:
+            type: string
+          example: "acc_123"
+      responses:
+        '204':
+          description: Комментарий удалён
+        '401':
+          description: Невалидный access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Нет прав на удаление комментария
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Комментарий не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /comments/{commentId}/hide:
+    post:
+      tags:
+        - Comments
+      summary: Скрыть/показать комментарий
+      description: |
+        Скрыть или показать комментарий.
+
+        Скрытые комментарии не видны другим пользователям, но видны автору.
+      operationId: hideComment
+      parameters:
+        - $ref: '#/components/parameters/CommentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HideCommentRequest'
+      responses:
+        '200':
+          description: Статус комментария изменён
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hidden:
+                    type: boolean
+                    description: Текущее состояние скрытия
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Невалидный access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Нет прав на скрытие комментария
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Комментарий не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   schemas:
     Account:
@@ -829,6 +1145,129 @@ components:
           description: Сообщение об ошибке
           example: "publication not found"
 
+    # Comment schemas
+    Comment:
+      type: object
+      required:
+        - id
+        - username
+        - text
+        - timestamp
+      properties:
+        id:
+          type: string
+          description: ID комментария в Instagram
+          example: "17895695668004551"
+        media_id:
+          type: string
+          description: ID медиа, к которому относится комментарий
+          example: "17895695668004550"
+        username:
+          type: string
+          description: Имя пользователя автора комментария
+          example: "user123"
+        text:
+          type: string
+          description: Текст комментария
+          example: "Отличное фото!"
+        timestamp:
+          type: string
+          format: date-time
+          description: Время создания комментария
+        like_count:
+          type: integer
+          description: Количество лайков
+          example: 5
+        hidden:
+          type: boolean
+          description: Скрыт ли комментарий
+          example: false
+        parent_id:
+          type: string
+          description: ID родительского комментария (для ответов)
+          example: "17895695668004552"
+        replies_count:
+          type: integer
+          description: Количество ответов на комментарий
+          example: 3
+        reply_to_username:
+          type: string
+          description: Имя пользователя, которому адресован ответ
+
+    CommentsResponse:
+      type: object
+      required:
+        - comments
+        - has_more
+      properties:
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Comment'
+        next_cursor:
+          type: string
+          description: Курсор для следующей страницы
+        has_more:
+          type: boolean
+          description: Есть ли ещё комментарии
+
+    CreateCommentRequest:
+      type: object
+      required:
+        - account_id
+        - message
+      properties:
+        account_id:
+          type: string
+          description: ID аккаунта для авторизации
+          example: "acc_123"
+        message:
+          type: string
+          description: Текст комментария
+          maxLength: 2200
+          example: "Отличный пост!"
+
+    ReplyRequest:
+      type: object
+      required:
+        - account_id
+        - message
+      properties:
+        account_id:
+          type: string
+          description: ID аккаунта для авторизации
+          example: "acc_123"
+        message:
+          type: string
+          description: Текст ответа
+          maxLength: 2200
+          example: "Спасибо!"
+
+    CreateCommentResponse:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+          description: ID созданного комментария
+          example: "17895695668004553"
+
+    HideCommentRequest:
+      type: object
+      required:
+        - account_id
+        - hide
+      properties:
+        account_id:
+          type: string
+          description: ID аккаунта для авторизации
+          example: "acc_123"
+        hide:
+          type: boolean
+          description: true - скрыть, false - показать
+          example: true
+
   parameters:
     AccountId:
       name: id
@@ -847,6 +1286,15 @@ components:
       schema:
         type: string
       example: "pub_xyz789"
+
+    CommentId:
+      name: commentId
+      in: path
+      required: true
+      description: ID комментария в Instagram
+      schema:
+        type: string
+      example: "17895695668004551"
 
   responses:
     BadRequest:

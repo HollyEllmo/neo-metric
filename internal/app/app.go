@@ -18,6 +18,9 @@ import (
 	"github.com/vadim/neo-metric/internal/config"
 	httpcontroller "github.com/vadim/neo-metric/internal/controller/http"
 	"github.com/vadim/neo-metric/internal/database"
+	commentEntity "github.com/vadim/neo-metric/internal/domain/comment/entity"
+	commentPolicy "github.com/vadim/neo-metric/internal/domain/comment/policy"
+	commentService "github.com/vadim/neo-metric/internal/domain/comment/service"
 	"github.com/vadim/neo-metric/internal/domain/publication/dao"
 	"github.com/vadim/neo-metric/internal/domain/publication/policy"
 	"github.com/vadim/neo-metric/internal/domain/publication/service"
@@ -36,6 +39,7 @@ type App struct {
 
 	// Domain policies (interfaces for HTTP handlers)
 	publicationPolicy *policy.Policy
+	commentPolicy     *commentPolicy.Policy
 
 	// Account lister for HTTP handlers
 	accountLister *accountListerAdapter
@@ -150,11 +154,15 @@ func (a *App) initDomains(_ context.Context) error {
 		a.accountLister = &accountListerAdapter{accountRepo}
 	}
 
-	// Initialize service
+	// Initialize publication service
 	pubService := service.New(publicationsRepo, mediaRepo)
 
-	// Initialize policy
+	// Initialize publication policy
 	a.publicationPolicy = policy.New(pubService, &instagramPublisherAdapter{igPublisher}, accountProvider)
+
+	// Initialize comment domain
+	commentSvc := commentService.New(&instagramCommentAdapter{igClient})
+	a.commentPolicy = commentPolicy.New(commentSvc, accountProvider)
 
 	return nil
 }
@@ -174,6 +182,10 @@ func (a *App) registerRoutes() {
 		// Publication routes
 		pubHandler := httpcontroller.NewPublicationHandler(a.publicationPolicy)
 		pubHandler.RegisterRoutes(r)
+
+		// Comment routes
+		commentHandler := httpcontroller.NewCommentHandler(a.commentPolicy)
+		commentHandler.RegisterRoutes(r)
 
 		// Account routes
 		if a.accountLister != nil {
@@ -354,4 +366,125 @@ func (a *mediaUploaderAdapter) Upload(ctx context.Context, in httpcontroller.Med
 		Key:  out.Key,
 		Size: out.Size,
 	}, nil
+}
+
+// instagramCommentAdapter adapts instagram.Client to commentService.InstagramClient
+type instagramCommentAdapter struct {
+	client *instagram.Client
+}
+
+func (a *instagramCommentAdapter) GetComments(ctx context.Context, mediaID, accessToken string, limit int, after string) (*commentService.CommentsResult, error) {
+	out, err := a.client.GetComments(ctx, instagram.GetCommentsInput{
+		MediaID:     mediaID,
+		AccessToken: accessToken,
+		Limit:       limit,
+		After:       after,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	comments := make([]commentEntity.Comment, len(out.Data))
+	for i, c := range out.Data {
+		comments[i] = commentEntity.Comment{
+			ID:           c.ID,
+			MediaID:      mediaID,
+			Username:     c.Username,
+			Text:         c.Text,
+			Timestamp:    c.Timestamp,
+			LikeCount:    c.LikeCount,
+			IsHidden:     c.Hidden,
+			RepliesCount: c.RepliesCount,
+		}
+	}
+
+	var nextCursor string
+	hasMore := false
+	if out.Paging != nil {
+		nextCursor = out.Paging.Cursors.After
+		hasMore = out.Paging.Next != ""
+	}
+
+	return &commentService.CommentsResult{
+		Comments:   comments,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+	}, nil
+}
+
+func (a *instagramCommentAdapter) GetCommentReplies(ctx context.Context, commentID, accessToken string, limit int, after string) (*commentService.CommentsResult, error) {
+	out, err := a.client.GetCommentReplies(ctx, instagram.GetCommentRepliesInput{
+		CommentID:   commentID,
+		AccessToken: accessToken,
+		Limit:       limit,
+		After:       after,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	comments := make([]commentEntity.Comment, len(out.Data))
+	for i, c := range out.Data {
+		comments[i] = commentEntity.Comment{
+			ID:        c.ID,
+			ParentID:  commentID,
+			Username:  c.Username,
+			Text:      c.Text,
+			Timestamp: c.Timestamp,
+			LikeCount: c.LikeCount,
+			IsHidden:  c.Hidden,
+		}
+	}
+
+	var nextCursor string
+	hasMore := false
+	if out.Paging != nil {
+		nextCursor = out.Paging.Cursors.After
+		hasMore = out.Paging.Next != ""
+	}
+
+	return &commentService.CommentsResult{
+		Comments:   comments,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+	}, nil
+}
+
+func (a *instagramCommentAdapter) CreateComment(ctx context.Context, mediaID, accessToken, message string) (string, error) {
+	out, err := a.client.CreateComment(ctx, instagram.CreateCommentInput{
+		MediaID:     mediaID,
+		AccessToken: accessToken,
+		Message:     message,
+	})
+	if err != nil {
+		return "", err
+	}
+	return out.ID, nil
+}
+
+func (a *instagramCommentAdapter) ReplyToComment(ctx context.Context, commentID, accessToken, message string) (string, error) {
+	out, err := a.client.ReplyToComment(ctx, instagram.ReplyToCommentInput{
+		CommentID:   commentID,
+		AccessToken: accessToken,
+		Message:     message,
+	})
+	if err != nil {
+		return "", err
+	}
+	return out.ID, nil
+}
+
+func (a *instagramCommentAdapter) DeleteComment(ctx context.Context, commentID, accessToken string) error {
+	return a.client.DeleteComment(ctx, instagram.DeleteCommentInput{
+		CommentID:   commentID,
+		AccessToken: accessToken,
+	})
+}
+
+func (a *instagramCommentAdapter) HideComment(ctx context.Context, commentID, accessToken string, hide bool) error {
+	return a.client.HideComment(ctx, instagram.HideCommentInput{
+		CommentID:   commentID,
+		AccessToken: accessToken,
+		Hide:        hide,
+	})
 }
