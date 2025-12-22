@@ -8,6 +8,9 @@ info:
     - Создание, редактирование и удаление публикаций (Post, Story, Reel)
     - Отложенный постинг (scheduling)
     - Немедленную публикацию
+    - Управление комментариями
+    - Direct Messages (Директ)
+    - Шаблоны сообщений
 
     ## Статусы публикаций
 
@@ -45,6 +48,10 @@ tags:
     description: Управление публикациями Instagram
   - name: Comments
     description: Управление комментариями Instagram
+  - name: Direct
+    description: Direct Messages (личные сообщения Instagram)
+  - name: Templates
+    description: Шаблоны сообщений для Direct и Comments
   - name: Health
     description: Проверка состояния сервиса
 
@@ -836,6 +843,528 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  # ============================================================================
+  # Direct Messages API
+  # ============================================================================
+
+  /direct/conversations:
+    get:
+      tags:
+        - Direct
+      summary: Список диалогов
+      description: |
+        Получить список диалогов Direct для указанного аккаунта.
+
+        Диалоги синхронизируются фоновым процессом и возвращаются из локальной БД.
+      operationId: getConversations
+      parameters:
+        - name: account_id
+          in: query
+          required: true
+          description: ID аккаунта
+          schema:
+            type: string
+          example: "acc_123"
+        - name: limit
+          in: query
+          description: Количество диалогов (макс. 100)
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          description: Смещение для пагинации
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: Список диалогов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /direct/conversations/search:
+    get:
+      tags:
+        - Direct
+      summary: Поиск диалогов
+      description: |
+        Поиск диалогов по имени пользователя или имени участника.
+
+        Использует полнотекстовый поиск по локальной БД.
+      operationId: searchConversations
+      parameters:
+        - name: account_id
+          in: query
+          required: true
+          description: ID аккаунта
+          schema:
+            type: string
+          example: "acc_123"
+        - name: q
+          in: query
+          required: true
+          description: Поисковый запрос
+          schema:
+            type: string
+            minLength: 1
+          example: "john"
+        - name: limit
+          in: query
+          description: Количество результатов (макс. 50)
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Результаты поиска
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /direct/conversations/{conversationId}/messages:
+    get:
+      tags:
+        - Direct
+      summary: Сообщения диалога
+      description: |
+        Получить сообщения диалога.
+
+        При первом открытии диалога выполняется синхронизация с Instagram API.
+        Последующие запросы возвращают данные из локальной БД.
+      operationId: getMessages
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+        - name: account_id
+          in: query
+          required: true
+          description: ID аккаунта
+          schema:
+            type: string
+          example: "acc_123"
+        - name: limit
+          in: query
+          description: Количество сообщений (макс. 100)
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: before
+          in: query
+          description: Получить сообщения до указанного timestamp
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Список сообщений
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessagesResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: Диалог не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      tags:
+        - Direct
+      summary: Отправить текстовое сообщение
+      description: |
+        Отправить текстовое сообщение в диалог.
+
+        Сообщение отправляется через Instagram API и сохраняется в локальной БД.
+      operationId: sendMessage
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+      responses:
+        '201':
+          description: Сообщение отправлено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: Диалог не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Превышен лимит сообщений
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /direct/conversations/{conversationId}/media:
+    post:
+      tags:
+        - Direct
+      summary: Отправить медиа-сообщение
+      description: |
+        Отправить изображение, видео или аудио в диалог.
+
+        **Поддерживаемые типы:**
+        - `image` - изображение
+        - `video` - видео
+        - `audio` - голосовое сообщение
+      operationId: sendMediaMessage
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMediaMessageRequest'
+      responses:
+        '201':
+          description: Сообщение отправлено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: Диалог не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Превышен лимит сообщений
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /direct/statistics:
+    get:
+      tags:
+        - Direct
+      summary: Статистика Direct Messages
+      description: |
+        Получить статистику по Direct Messages за указанный период.
+
+        **Включает:**
+        - Общее количество диалогов
+        - Новые диалоги за период
+        - Количество уникальных пользователей
+        - Среднее время первого ответа
+        - Среднее время ответа
+        - Самый активный день недели
+        - Самый активный временной слот
+        - Всего отправлено/получено сообщений
+      operationId: getDirectStatistics
+      parameters:
+        - name: account_id
+          in: query
+          required: true
+          description: ID аккаунта
+          schema:
+            type: string
+          example: "acc_123"
+        - name: from
+          in: query
+          required: true
+          description: Начало периода
+          schema:
+            type: string
+            format: date-time
+          example: "2025-01-01T00:00:00Z"
+        - name: to
+          in: query
+          required: true
+          description: Конец периода
+          schema:
+            type: string
+            format: date-time
+          example: "2025-01-31T23:59:59Z"
+      responses:
+        '200':
+          description: Статистика
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectStatistics'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /direct/heatmap:
+    get:
+      tags:
+        - Direct
+      summary: Тепловая карта сообщений
+      description: |
+        Получить тепловую карту активности сообщений.
+
+        Возвращает количество сообщений по дням недели (0-6) и часам (0-23).
+      operationId: getDirectHeatmap
+      parameters:
+        - name: account_id
+          in: query
+          required: true
+          description: ID аккаунта
+          schema:
+            type: string
+          example: "acc_123"
+        - name: from
+          in: query
+          required: true
+          description: Начало периода
+          schema:
+            type: string
+            format: date-time
+          example: "2025-01-01T00:00:00Z"
+        - name: to
+          in: query
+          required: true
+          description: Конец периода
+          schema:
+            type: string
+            format: date-time
+          example: "2025-01-31T23:59:59Z"
+      responses:
+        '200':
+          description: Тепловая карта
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectHeatmap'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ============================================================================
+  # Templates API
+  # ============================================================================
+
+  /templates:
+    get:
+      tags:
+        - Templates
+      summary: Список шаблонов
+      description: |
+        Получить список шаблонов сообщений.
+
+        Можно фильтровать по типу: `direct`, `comment`, `both`.
+      operationId: listTemplates
+      parameters:
+        - name: account_id
+          in: query
+          required: true
+          description: ID аккаунта
+          schema:
+            type: string
+          example: "acc_123"
+        - name: type
+          in: query
+          description: Фильтр по типу шаблона
+          schema:
+            $ref: '#/components/schemas/TemplateType'
+        - name: limit
+          in: query
+          description: Количество шаблонов (макс. 100)
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          description: Смещение для пагинации
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: Список шаблонов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplatesResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      tags:
+        - Templates
+      summary: Создать шаблон
+      description: |
+        Создать новый шаблон сообщения.
+
+        **Типы шаблонов:**
+        - `direct` - только для Direct Messages
+        - `comment` - только для комментариев
+        - `both` - для обоих типов
+      operationId: createTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTemplateRequest'
+      responses:
+        '201':
+          description: Шаблон создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Template'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /templates/{templateId}:
+    get:
+      tags:
+        - Templates
+      summary: Получить шаблон
+      description: Получить шаблон по ID
+      operationId: getTemplate
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      responses:
+        '200':
+          description: Шаблон найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Template'
+        '404':
+          description: Шаблон не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      tags:
+        - Templates
+      summary: Обновить шаблон
+      description: Обновить существующий шаблон
+      operationId: updateTemplate
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTemplateRequest'
+      responses:
+        '200':
+          description: Шаблон обновлён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Template'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: Шаблон не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      tags:
+        - Templates
+      summary: Удалить шаблон
+      description: Удалить шаблон по ID
+      operationId: deleteTemplate
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      responses:
+        '204':
+          description: Шаблон удалён
+        '404':
+          description: Шаблон не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /templates/{templateId}/use:
+    post:
+      tags:
+        - Templates
+      summary: Отметить использование шаблона
+      description: |
+        Увеличить счётчик использования шаблона.
+
+        Вызывается при отправке сообщения с использованием шаблона.
+      operationId: useTemplate
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      responses:
+        '200':
+          description: Счётчик увеличен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Template'
+        '404':
+          description: Шаблон не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   schemas:
     Account:
@@ -1268,6 +1797,433 @@ components:
           description: true - скрыть, false - показать
           example: true
 
+    # Direct Messages schemas
+    Conversation:
+      type: object
+      required:
+        - id
+        - account_id
+        - participant_id
+        - participant_username
+      properties:
+        id:
+          type: string
+          description: ID диалога в Instagram
+          example: "aWdtOjE3ODQxNDAw"
+        account_id:
+          type: string
+          description: ID аккаунта
+          example: "acc_123"
+        participant_id:
+          type: string
+          description: ID участника диалога
+          example: "17841400123456789"
+        participant_username:
+          type: string
+          description: Username участника
+          example: "john_doe"
+        participant_name:
+          type: string
+          description: Имя участника
+          example: "John Doe"
+        participant_avatar_url:
+          type: string
+          format: uri
+          description: URL аватара участника
+          example: "https://instagram.com/avatar.jpg"
+        participant_followers_count:
+          type: integer
+          description: Количество подписчиков участника
+          example: 1500
+        last_message_text:
+          type: string
+          description: Текст последнего сообщения
+          example: "Привет!"
+        last_message_at:
+          type: string
+          format: date-time
+          description: Время последнего сообщения
+        unread_count:
+          type: integer
+          description: Количество непрочитанных сообщений
+          example: 2
+        created_at:
+          type: string
+          format: date-time
+          description: Дата создания записи
+        updated_at:
+          type: string
+          format: date-time
+          description: Дата обновления записи
+
+    ConversationsResponse:
+      type: object
+      required:
+        - conversations
+        - total
+      properties:
+        conversations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Conversation'
+        total:
+          type: integer
+          description: Общее количество диалогов
+          example: 42
+        limit:
+          type: integer
+          example: 50
+        offset:
+          type: integer
+          example: 0
+
+    MessageType:
+      type: string
+      enum:
+        - text
+        - image
+        - video
+        - audio
+        - story_mention
+      description: |
+        Тип сообщения:
+        * `text` - Текстовое сообщение
+        * `image` - Изображение
+        * `video` - Видео
+        * `audio` - Голосовое сообщение
+        * `story_mention` - Упоминание в истории
+
+    Message:
+      type: object
+      required:
+        - id
+        - conversation_id
+        - sender_id
+        - type
+        - is_from_me
+        - timestamp
+      properties:
+        id:
+          type: string
+          description: ID сообщения в Instagram
+          example: "aWdtOjE3ODQxNDAx"
+        conversation_id:
+          type: string
+          description: ID диалога
+          example: "aWdtOjE3ODQxNDAw"
+        sender_id:
+          type: string
+          description: ID отправителя
+          example: "17841400123456789"
+        type:
+          $ref: '#/components/schemas/MessageType'
+        text:
+          type: string
+          description: Текст сообщения
+          example: "Привет! Как дела?"
+        media_url:
+          type: string
+          format: uri
+          description: URL медиафайла (для image/video/audio)
+          example: "https://instagram.com/media.jpg"
+        media_type:
+          type: string
+          description: MIME-тип медиафайла
+          example: "image/jpeg"
+        is_from_me:
+          type: boolean
+          description: Сообщение от владельца аккаунта
+          example: true
+        timestamp:
+          type: string
+          format: date-time
+          description: Время отправки сообщения
+
+    MessagesResponse:
+      type: object
+      required:
+        - messages
+        - has_more
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+        has_more:
+          type: boolean
+          description: Есть ли ещё сообщения
+
+    SendMessageRequest:
+      type: object
+      required:
+        - account_id
+        - text
+      properties:
+        account_id:
+          type: string
+          description: ID аккаунта
+          example: "acc_123"
+        text:
+          type: string
+          description: Текст сообщения
+          maxLength: 1000
+          example: "Привет!"
+
+    SendMediaMessageRequest:
+      type: object
+      required:
+        - account_id
+        - media_url
+        - media_type
+      properties:
+        account_id:
+          type: string
+          description: ID аккаунта
+          example: "acc_123"
+        media_url:
+          type: string
+          format: uri
+          description: URL медиафайла
+          example: "https://storage.example.com/image.jpg"
+        media_type:
+          type: string
+          enum:
+            - image
+            - video
+            - audio
+          description: Тип медиафайла
+
+    DirectStatistics:
+      type: object
+      required:
+        - total_dialogs
+        - new_dialogs
+        - unique_users
+        - total_messages_sent
+        - total_messages_received
+      properties:
+        total_dialogs:
+          type: integer
+          description: Общее количество диалогов
+          example: 150
+        new_dialogs:
+          type: integer
+          description: Новые диалоги за период
+          example: 25
+        unique_users:
+          type: integer
+          description: Уникальные пользователи
+          example: 140
+        first_response_time_seconds:
+          type: number
+          format: float
+          description: Среднее время первого ответа (секунды)
+          example: 3600.5
+        avg_response_time_seconds:
+          type: number
+          format: float
+          description: Среднее время ответа (секунды)
+          example: 1800.0
+        busiest_day:
+          type: string
+          description: Самый активный день недели
+          example: "Monday"
+        busiest_time_slot:
+          type: string
+          description: Самый активный временной слот
+          example: "14:00-15:00"
+        total_messages_sent:
+          type: integer
+          description: Всего отправлено сообщений
+          example: 500
+        total_messages_received:
+          type: integer
+          description: Всего получено сообщений
+          example: 450
+
+    HeatmapCell:
+      type: object
+      required:
+        - day
+        - hour
+        - count
+      properties:
+        day:
+          type: integer
+          description: День недели (0 = воскресенье, 6 = суббота)
+          minimum: 0
+          maximum: 6
+          example: 1
+        hour:
+          type: integer
+          description: Час (0-23)
+          minimum: 0
+          maximum: 23
+          example: 14
+        count:
+          type: integer
+          description: Количество сообщений
+          example: 25
+
+    DirectHeatmap:
+      type: object
+      required:
+        - cells
+      properties:
+        cells:
+          type: array
+          items:
+            $ref: '#/components/schemas/HeatmapCell'
+          description: Ячейки тепловой карты
+
+    # Template schemas
+    TemplateType:
+      type: string
+      enum:
+        - direct
+        - comment
+        - both
+      description: |
+        Тип шаблона:
+        * `direct` - Только для Direct Messages
+        * `comment` - Только для комментариев
+        * `both` - Для обоих типов
+
+    Template:
+      type: object
+      required:
+        - id
+        - account_id
+        - title
+        - content
+        - type
+        - usage_count
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          description: ID шаблона
+          example: "tmpl_abc123"
+        account_id:
+          type: string
+          description: ID аккаунта
+          example: "acc_123"
+        title:
+          type: string
+          description: Название шаблона
+          maxLength: 255
+          example: "Приветствие"
+        content:
+          type: string
+          description: Текст шаблона
+          maxLength: 2200
+          example: "Привет! Спасибо за обращение."
+        images:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: URL изображений
+          example: ["https://storage.example.com/img1.jpg"]
+        icon:
+          type: string
+          description: Иконка шаблона (emoji)
+          example: "👋"
+        type:
+          $ref: '#/components/schemas/TemplateType'
+        usage_count:
+          type: integer
+          description: Количество использований
+          example: 42
+        created_at:
+          type: string
+          format: date-time
+          description: Дата создания
+        updated_at:
+          type: string
+          format: date-time
+          description: Дата обновления
+
+    TemplatesResponse:
+      type: object
+      required:
+        - templates
+        - total
+      properties:
+        templates:
+          type: array
+          items:
+            $ref: '#/components/schemas/Template'
+        total:
+          type: integer
+          description: Общее количество шаблонов
+          example: 15
+        limit:
+          type: integer
+          example: 50
+        offset:
+          type: integer
+          example: 0
+
+    CreateTemplateRequest:
+      type: object
+      required:
+        - account_id
+        - title
+        - content
+        - type
+      properties:
+        account_id:
+          type: string
+          description: ID аккаунта
+          example: "acc_123"
+        title:
+          type: string
+          description: Название шаблона
+          maxLength: 255
+          example: "Приветствие"
+        content:
+          type: string
+          description: Текст шаблона
+          maxLength: 2200
+          example: "Привет! Спасибо за обращение."
+        images:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: URL изображений
+        icon:
+          type: string
+          description: Иконка шаблона (emoji)
+          example: "👋"
+        type:
+          $ref: '#/components/schemas/TemplateType'
+
+    UpdateTemplateRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          description: Название шаблона
+          maxLength: 255
+        content:
+          type: string
+          description: Текст шаблона
+          maxLength: 2200
+        images:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: URL изображений
+        icon:
+          type: string
+          description: Иконка шаблона (emoji)
+        type:
+          $ref: '#/components/schemas/TemplateType'
+
   parameters:
     AccountId:
       name: id
@@ -1295,6 +2251,24 @@ components:
       schema:
         type: string
       example: "17895695668004551"
+
+    ConversationId:
+      name: conversationId
+      in: path
+      required: true
+      description: ID диалога
+      schema:
+        type: string
+      example: "aWdtOjE3ODQxNDAw"
+
+    TemplateId:
+      name: templateId
+      in: path
+      required: true
+      description: ID шаблона
+      schema:
+        type: string
+      example: "tmpl_abc123"
 
   responses:
     BadRequest:
