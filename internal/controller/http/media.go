@@ -91,7 +91,9 @@ func (h *MediaHandler) Upload() http.HandlerFunc {
 			Filename:    header.Filename,
 		})
 		if err != nil {
-			response.InternalError(w, "failed to upload file")
+			// Log error for debugging (in production, use proper logger)
+			fmt.Printf("upload error: %v\n", err)
+			response.InternalError(w, fmt.Sprintf("failed to upload file: %v", err))
 			return
 		}
 
