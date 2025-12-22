@@ -14,6 +14,17 @@ type Config struct {
 	Instagram Instagram `yaml:"instagram"`
 	Database  Database  `yaml:"database"`
 	Scheduler Scheduler `yaml:"scheduler"`
+	S3        S3        `yaml:"s3"`
+}
+
+// S3 holds S3/MinIO storage configuration
+type S3 struct {
+	Endpoint        string `yaml:"endpoint" env:"S3_ENDPOINT" env-default:"http://localhost:9000"`
+	AccessKeyID     string `yaml:"access_key_id" env:"S3_ACCESS_KEY_ID" env-default:"minioadmin"`
+	SecretAccessKey string `yaml:"secret_access_key" env:"S3_SECRET_ACCESS_KEY" env-default:"minioadmin"`
+	Bucket          string `yaml:"bucket" env:"S3_BUCKET" env-default:"media"`
+	Region          string `yaml:"region" env:"S3_REGION" env-default:"us-east-1"`
+	PublicURL       string `yaml:"public_url" env:"S3_PUBLIC_URL" env-default:"http://localhost:9000/media"`
 }
 
 // Server holds HTTP server configuration

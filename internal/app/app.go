@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"github.com/vadim/neo-metric/internal/domain/publication/policy"
 	"github.com/vadim/neo-metric/internal/domain/publication/service"
 	"github.com/vadim/neo-metric/internal/httpx/upstream/instagram"
+	"github.com/vadim/neo-metric/internal/storage"
 )
 
 // App is the main application container
@@ -30,6 +32,7 @@ type App struct {
 	router     *chi.Mux
 	logger     *slog.Logger
 	pg         *pgxpool.Pool
+	s3         *storage.S3Storage
 
 	// Domain policies (interfaces for HTTP handlers)
 	publicationPolicy *policy.Policy
@@ -104,6 +107,23 @@ func (a *App) initInfrastructure(ctx context.Context) error {
 		a.logger.Info("connected to PostgreSQL")
 	}
 
+	// Initialize S3 storage
+	if a.cfg.S3.Endpoint != "" {
+		s3Storage, err := storage.NewS3Storage(storage.S3Config{
+			Endpoint:        a.cfg.S3.Endpoint,
+			AccessKeyID:     a.cfg.S3.AccessKeyID,
+			SecretAccessKey: a.cfg.S3.SecretAccessKey,
+			Bucket:          a.cfg.S3.Bucket,
+			Region:          a.cfg.S3.Region,
+			PublicURL:       a.cfg.S3.PublicURL,
+		})
+		if err != nil {
+			return fmt.Errorf("initializing s3 storage: %w", err)
+		}
+		a.s3 = s3Storage
+		a.logger.Info("initialized S3 storage", "endpoint", a.cfg.S3.Endpoint)
+	}
+
 	return nil
 }
 
@@ -159,6 +179,12 @@ func (a *App) registerRoutes() {
 		if a.accountLister != nil {
 			accHandler := httpcontroller.NewAccountHandler(a.accountLister)
 			accHandler.RegisterRoutes(r)
+		}
+
+		// Media upload routes
+		if a.s3 != nil {
+			mediaHandler := httpcontroller.NewMediaHandler(&mediaUploaderAdapter{a.s3})
+			mediaHandler.RegisterRoutes(r)
 		}
 	})
 }
@@ -306,4 +332,26 @@ func (a *accountListerAdapter) ListAccounts(ctx context.Context) ([]httpcontroll
 		}
 	}
 	return result, nil
+}
+
+// mediaUploaderAdapter adapts S3Storage to httpcontroller.MediaUploader
+type mediaUploaderAdapter struct {
+	storage *storage.S3Storage
+}
+
+func (a *mediaUploaderAdapter) Upload(ctx context.Context, in httpcontroller.MediaUploadInput) (*httpcontroller.MediaUploadOutput, error) {
+	out, err := a.storage.Upload(ctx, storage.UploadInput{
+		Reader:      in.Reader.(io.Reader),
+		ContentType: in.ContentType,
+		Size:        in.Size,
+		Filename:    in.Filename,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &httpcontroller.MediaUploadOutput{
+		URL:  out.URL,
+		Key:  out.Key,
+		Size: out.Size,
+	}, nil
 }

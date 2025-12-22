@@ -39,6 +39,8 @@ servers:
 tags:
   - name: Accounts
     description: Instagram аккаунты
+  - name: Media
+    description: Загрузка медиафайлов
   - name: Publications
     description: Управление публикациями Instagram
   - name: Health
@@ -121,6 +123,49 @@ paths:
                 $ref: '#/components/schemas/Account'
         '404':
           description: Аккаунт не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /media/upload:
+    post:
+      tags:
+        - Media
+      summary: Загрузить медиафайл
+      description: |
+        Загружает медиафайл в хранилище и возвращает публичный URL.
+
+        Поддерживаемые форматы:
+        - Изображения: JPEG, PNG, GIF, WebP
+        - Видео: MP4, MOV
+
+        Максимальный размер файла: 50 МБ
+      operationId: uploadMedia
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Медиафайл для загрузки
+      responses:
+        '201':
+          description: Файл успешно загружен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaUploadResponse'
+        '400':
+          description: Неверный запрос (неподдерживаемый формат или файл слишком большой)
           content:
             application/json:
               schema:
@@ -527,6 +572,28 @@ components:
           type: integer
           description: Общее количество аккаунтов
           example: 3
+
+    MediaUploadResponse:
+      type: object
+      required:
+        - url
+        - key
+        - size
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Публичный URL загруженного файла
+          example: "http://localhost:9000/media/2025/01/15/abc123.jpg"
+        key:
+          type: string
+          description: Ключ объекта в хранилище
+          example: "2025/01/15/abc123.jpg"
+        size:
+          type: integer
+          format: int64
+          description: Размер файла в байтах
+          example: 1048576
 
     PublicationType:
       type: string
