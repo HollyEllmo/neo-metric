@@ -63,7 +63,12 @@ func (p *Publication) IsEditable() bool {
 
 // IsDeletable returns true if the publication can be deleted
 func (p *Publication) IsDeletable() bool {
-	return p.Status != PublicationStatusPublished
+	return true
+}
+
+// IsPublished returns true if the publication was published to Instagram
+func (p *Publication) IsPublished() bool {
+	return p.Status == PublicationStatusPublished && p.InstagramMediaID != ""
 }
 
 // CanPublish returns true if the publication is ready for publishing

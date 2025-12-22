@@ -392,30 +392,19 @@ paths:
         - Publications
       summary: Удалить публикацию
       description: |
-        Удалить публикацию.
+        Удалить публикацию из базы данных.
 
-        Для опубликованного контента можно дополнительно удалить из Instagram,
-        передав параметр `delete_from_instagram=true`.
+        **Важно:** Instagram Graph API не поддерживает удаление опубликованного контента.
+        Если публикация уже была размещена в Instagram, она останется там и должна быть
+        удалена вручную через приложение Instagram.
       operationId: deletePublication
       parameters:
         - $ref: '#/components/parameters/PublicationId'
-        - name: delete_from_instagram
-          in: query
-          description: Также удалить из Instagram (для опубликованных)
-          schema:
-            type: boolean
-            default: false
       responses:
         '204':
-          description: Публикация удалена
+          description: Публикация удалена из базы данных
         '404':
           $ref: '#/components/responses/NotFound'
-        '409':
-          description: Публикацию нельзя удалить
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
         '500':
           $ref: '#/components/responses/InternalError'
 

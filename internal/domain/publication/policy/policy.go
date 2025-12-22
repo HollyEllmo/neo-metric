@@ -151,31 +151,21 @@ func (p *Policy) GetPublication(ctx context.Context, id string) (*entity.Publica
 
 // DeletePublicationInput represents input for deleting a publication
 type DeletePublicationInput struct {
-	ID                string
-	DeleteFromInstagram bool // If true, also delete from Instagram (for published content)
+	ID string
 }
 
 // DeletePublication deletes a publication
+// Note: Instagram Graph API does not support deleting published media.
+// Published posts must be deleted manually through the Instagram app.
 func (p *Policy) DeletePublication(ctx context.Context, in DeletePublicationInput) error {
-	// Get publication first to check if we need to delete from Instagram
-	pub, err := p.svc.GetPublication(ctx, in.ID)
-	if err != nil {
+	// Verify publication exists
+	if _, err := p.svc.GetPublication(ctx, in.ID); err != nil {
 		return err
 	}
 
-	// If published and user wants to delete from Instagram
-	if pub.Status == entity.PublicationStatusPublished && in.DeleteFromInstagram && pub.InstagramMediaID != "" {
-		accessToken, err := p.accounts.GetAccessToken(ctx, pub.AccountID)
-		if err != nil {
-			return err
-		}
-
-		if err := p.ig.Delete(ctx, pub.InstagramMediaID, accessToken); err != nil {
-			// Log error but continue with local deletion
-			// Instagram deletion might fail for various reasons
-		}
-	}
-
+	// Delete from local database
+	// Note: If the publication was published to Instagram, it will remain there
+	// as Instagram API does not support deletion of published content
 	return p.svc.DeletePublication(ctx, in.ID)
 }
 

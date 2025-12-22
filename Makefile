@@ -1,4 +1,4 @@
-.PHONY: build run test lint clean deps dev
+.PHONY: build run test test-e2e test-e2e-create test-e2e-get test-e2e-list test-e2e-update test-e2e-delete test-e2e-publish test-e2e-schedule test-e2e-draft lint clean deps dev
 
 # Binary name
 BINARY_NAME=neo-metric
@@ -42,6 +42,51 @@ test-coverage:
 	@echo "Testing with coverage..."
 	$(GOTEST) -v -race -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
+
+## test-e2e: Run all e2e tests (requires server to be running on localhost:8080)
+test-e2e:
+	@echo "Running all e2e tests..."
+	$(GOTEST) -v ./tests/e2e/...
+
+## test-e2e-create: Run e2e tests for POST /publications
+test-e2e-create:
+	@echo "Running e2e tests for Create endpoint..."
+	$(GOTEST) -v -run TestPublicationCreate ./tests/e2e/...
+
+## test-e2e-get: Run e2e tests for GET /publications/{id}
+test-e2e-get:
+	@echo "Running e2e tests for Get endpoint..."
+	$(GOTEST) -v -run TestPublicationGet ./tests/e2e/...
+
+## test-e2e-list: Run e2e tests for GET /publications
+test-e2e-list:
+	@echo "Running e2e tests for List endpoint..."
+	$(GOTEST) -v -run TestPublicationList ./tests/e2e/...
+
+## test-e2e-update: Run e2e tests for PUT /publications/{id}
+test-e2e-update:
+	@echo "Running e2e tests for Update endpoint..."
+	$(GOTEST) -v -run TestPublicationUpdate ./tests/e2e/...
+
+## test-e2e-delete: Run e2e tests for DELETE /publications/{id}
+test-e2e-delete:
+	@echo "Running e2e tests for Delete endpoint..."
+	$(GOTEST) -v -run TestPublicationDelete ./tests/e2e/...
+
+## test-e2e-publish: Run e2e tests for POST /publications/{id}/publish
+test-e2e-publish:
+	@echo "Running e2e tests for Publish endpoint..."
+	$(GOTEST) -v -run TestPublicationPublish ./tests/e2e/...
+
+## test-e2e-schedule: Run e2e tests for POST /publications/{id}/schedule
+test-e2e-schedule:
+	@echo "Running e2e tests for Schedule endpoint..."
+	$(GOTEST) -v -run TestPublicationSchedule ./tests/e2e/...
+
+## test-e2e-draft: Run e2e tests for POST /publications/{id}/draft
+test-e2e-draft:
+	@echo "Running e2e tests for Draft endpoint..."
+	$(GOTEST) -v -run TestPublicationDraft ./tests/e2e/...
 
 ## lint: Run linters
 lint:

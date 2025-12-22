@@ -219,12 +219,8 @@ func (h *PublicationHandler) Delete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 
-		// Check if user wants to delete from Instagram too
-		deleteFromIG := r.URL.Query().Get("delete_from_instagram") == "true"
-
 		err := h.policy.DeletePublication(r.Context(), policy.DeletePublicationInput{
-			ID:                  id,
-			DeleteFromInstagram: deleteFromIG,
+			ID: id,
 		})
 		if err != nil {
 			handleDomainError(w, err)
