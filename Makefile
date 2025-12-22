@@ -1,4 +1,8 @@
-.PHONY: build run test test-e2e test-e2e-create test-e2e-get test-e2e-list test-e2e-update test-e2e-delete test-e2e-publish test-e2e-schedule test-e2e-draft lint clean deps dev
+# Load environment variables from .env
+-include .env
+export
+
+.PHONY: build run test test-e2e test-e2e-create test-e2e-get test-e2e-list test-e2e-update test-e2e-delete test-e2e-publish test-e2e-schedule test-e2e-draft lint clean deps dev migrate-up migrate-down migrate-status migrate-create
 
 # Binary name
 BINARY_NAME=neo-metric
@@ -103,6 +107,29 @@ deps:
 	@echo "Downloading dependencies..."
 	$(GOMOD) download
 	$(GOMOD) tidy
+
+# Database settings
+MIGRATIONS_DIR=./migrations
+
+## migrate-up: Run all pending migrations
+migrate-up:
+	@echo "Running migrations..."
+	goose -dir $(MIGRATIONS_DIR) postgres "$(DATABASE_URL)" up
+
+## migrate-down: Rollback the last migration
+migrate-down:
+	@echo "Rolling back last migration..."
+	goose -dir $(MIGRATIONS_DIR) postgres "$(DATABASE_URL)" down
+
+## migrate-status: Show migration status
+migrate-status:
+	@echo "Migration status:"
+	goose -dir $(MIGRATIONS_DIR) postgres "$(DATABASE_URL)" status
+
+## migrate-create: Create a new migration (usage: make migrate-create name=create_users)
+migrate-create:
+	@echo "Creating migration $(name)..."
+	goose -dir $(MIGRATIONS_DIR) create $(name) sql
 
 ## clean: Clean build artifacts
 clean:
