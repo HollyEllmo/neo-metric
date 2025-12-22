@@ -101,7 +101,7 @@ func (h *SwaggerHandler) UI() http.HandlerFunc {
 func (h *SwaggerHandler) Spec() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-yaml")
-		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("Cache-Control", "no-cache")
 		w.Write(h.spec)
 	}
 }
@@ -112,7 +112,7 @@ func (h *SwaggerHandler) SpecJSON() http.HandlerFunc {
 		// For simplicity, we'll serve YAML with JSON content-type
 		// In production, you might want to convert YAML to JSON
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("Cache-Control", "no-cache")
 
 		// Note: This serves YAML as-is. For proper JSON conversion,
 		// you would need to parse YAML and marshal to JSON

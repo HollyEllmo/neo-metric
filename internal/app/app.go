@@ -12,9 +12,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/vadim/neo-metric/internal/config"
 	httpcontroller "github.com/vadim/neo-metric/internal/controller/http"
+	"github.com/vadim/neo-metric/internal/database"
 	"github.com/vadim/neo-metric/internal/domain/publication/dao"
 	"github.com/vadim/neo-metric/internal/domain/publication/policy"
 	"github.com/vadim/neo-metric/internal/domain/publication/service"
@@ -27,9 +29,13 @@ type App struct {
 	httpServer *http.Server
 	router     *chi.Mux
 	logger     *slog.Logger
+	pg         *pgxpool.Pool
 
 	// Domain policies (interfaces for HTTP handlers)
 	publicationPolicy *policy.Policy
+
+	// Account lister for HTTP handlers
+	accountLister *accountListerAdapter
 
 	// Scheduler for processing scheduled publications
 	scheduler *Scheduler
@@ -88,19 +94,21 @@ func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
 
 // initInfrastructure initializes infrastructure components (DB, Redis, etc.)
 func (a *App) initInfrastructure(ctx context.Context) error {
-	// TODO: Initialize database connection when DBMS is chosen
-	// Example:
-	// pgClient, err := database.NewPostgresClient(ctx, a.cfg.Database.PostgresDSN)
-	// if err != nil {
-	//     return fmt.Errorf("connecting to postgres: %w", err)
-	// }
-	// a.pg = pgClient
+	// Initialize PostgreSQL connection if DSN is provided
+	if a.cfg.Database.PostgresDSN != "" {
+		pool, err := database.NewPostgresPool(ctx, a.cfg.Database.PostgresDSN)
+		if err != nil {
+			return fmt.Errorf("connecting to postgres: %w", err)
+		}
+		a.pg = pool
+		a.logger.Info("connected to PostgreSQL")
+	}
 
 	return nil
 }
 
 // initDomains initializes domain layers (DAO, Service, Policy)
-func (a *App) initDomains(ctx context.Context) error {
+func (a *App) initDomains(_ context.Context) error {
 	// Initialize Instagram client
 	igClient := instagram.New(
 		instagram.WithBaseURL(a.cfg.Instagram.BaseURL),
@@ -108,20 +116,22 @@ func (a *App) initDomains(ctx context.Context) error {
 	)
 	igPublisher := instagram.NewPublisher(igClient)
 
-	// TODO: Replace with real DAO implementations when DBMS is chosen
-	// For now, these are nil - will cause panic if used
-	// In production, inject real implementations:
-	//   publicationsDAO := dao.NewPublicationsPostgres(pgClient)
-	//   mediaDAO := dao.NewMediaPostgres(pgClient)
+	// Initialize DAOs
 	var publicationsRepo dao.PublicationRepository
 	var mediaRepo dao.MediaRepository
+	var accountProvider policy.AccountProvider
+
+	if a.pg != nil {
+		// Use PostgreSQL implementations
+		publicationsRepo = dao.NewPublicationPostgres(a.pg)
+		mediaRepo = dao.NewMediaPostgres(a.pg)
+		accountRepo := dao.NewAccountPostgres(a.pg)
+		accountProvider = &accountProviderAdapter{accountRepo}
+		a.accountLister = &accountListerAdapter{accountRepo}
+	}
 
 	// Initialize service
 	pubService := service.New(publicationsRepo, mediaRepo)
-
-	// TODO: Replace with real account provider
-	// accountProvider := accountcache.New(laravelClient)
-	var accountProvider policy.AccountProvider
 
 	// Initialize policy
 	a.publicationPolicy = policy.New(pubService, &instagramPublisherAdapter{igPublisher}, accountProvider)
@@ -144,6 +154,12 @@ func (a *App) registerRoutes() {
 		// Publication routes
 		pubHandler := httpcontroller.NewPublicationHandler(a.publicationPolicy)
 		pubHandler.RegisterRoutes(r)
+
+		// Account routes
+		if a.accountLister != nil {
+			accHandler := httpcontroller.NewAccountHandler(a.accountLister)
+			accHandler.RegisterRoutes(r)
+		}
 	})
 }
 
@@ -156,8 +172,17 @@ func (a *App) healthHandler(w http.ResponseWriter, r *http.Request) {
 
 // readyHandler handles readiness check requests
 func (a *App) readyHandler(w http.ResponseWriter, r *http.Request) {
-	// TODO: Check database connectivity, etc.
 	w.Header().Set("Content-Type", "application/json")
+
+	// Check database connectivity
+	if a.pg != nil {
+		if err := a.pg.Ping(r.Context()); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte(`{"status":"not ready","error":"database connection failed"}`))
+			return
+		}
+	}
+
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status":"ready"}`))
 }
@@ -214,10 +239,10 @@ func (a *App) Shutdown(ctx context.Context) error {
 		return fmt.Errorf("shutting down HTTP server: %w", err)
 	}
 
-	// TODO: Close database connections
-	// if a.pg != nil {
-	//     a.pg.Close()
-	// }
+	// Close database connections
+	if a.pg != nil {
+		a.pg.Close()
+	}
 
 	a.logger.Info("shutdown complete")
 	return nil
@@ -245,4 +270,40 @@ func (a *instagramPublisherAdapter) Publish(ctx context.Context, in policy.Publi
 
 func (a *instagramPublisherAdapter) Delete(ctx context.Context, mediaID, accessToken string) error {
 	return a.publisher.Delete(ctx, mediaID, accessToken)
+}
+
+// accountProviderAdapter adapts AccountPostgres to policy.AccountProvider
+type accountProviderAdapter struct {
+	repo *dao.AccountPostgres
+}
+
+func (a *accountProviderAdapter) GetAccessToken(ctx context.Context, accountID string) (string, error) {
+	return a.repo.GetAccessToken(ctx, accountID)
+}
+
+func (a *accountProviderAdapter) GetInstagramUserID(ctx context.Context, accountID string) (string, error) {
+	return a.repo.GetInstagramUserID(ctx, accountID)
+}
+
+// accountListerAdapter adapts AccountPostgres to httpcontroller.AccountLister
+type accountListerAdapter struct {
+	repo *dao.AccountPostgres
+}
+
+func (a *accountListerAdapter) ListAccounts(ctx context.Context) ([]httpcontroller.AccountInfo, error) {
+	accounts, err := a.repo.ListAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]httpcontroller.AccountInfo, len(accounts))
+	for i, acc := range accounts {
+		result[i] = httpcontroller.AccountInfo{
+			ID:              acc.ID,
+			InstagramUserID: acc.InstagramUserID,
+			Username:        acc.Username,
+			HasAccessToken:  acc.AccessToken != "",
+		}
+	}
+	return result, nil
 }

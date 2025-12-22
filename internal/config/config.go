@@ -49,7 +49,7 @@ type Database struct {
 
 // Scheduler holds scheduler configuration
 type Scheduler struct {
-	Enabled  bool          `yaml:"enabled" env:"SCHEDULER_ENABLED" env-default:"true"`
+	Enabled  bool          `yaml:"enabled" env:"SCHEDULER_ENABLED" env-default:"false"`
 	Interval time.Duration `yaml:"interval" env:"SCHEDULER_INTERVAL" env-default:"1m"`
 }
 

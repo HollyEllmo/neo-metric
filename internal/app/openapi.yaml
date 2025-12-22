@@ -37,6 +37,8 @@ servers:
     description: Production server
 
 tags:
+  - name: Accounts
+    description: Instagram аккаунты
   - name: Publications
     description: Управление публикациями Instagram
   - name: Health
@@ -80,6 +82,51 @@ paths:
                   status:
                     type: string
                     example: ready
+
+  /accounts:
+    get:
+      tags:
+        - Accounts
+      summary: Список Instagram аккаунтов
+      description: |
+        Получить список всех подключённых Instagram аккаунтов.
+
+        Возвращает информацию о наличии активного access token.
+      operationId: listAccounts
+      responses:
+        '200':
+          description: Список аккаунтов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountListResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /accounts/{id}:
+    get:
+      tags:
+        - Accounts
+      summary: Получить аккаунт
+      description: Получить информацию об Instagram аккаунте по ID
+      operationId: getAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      responses:
+        '200':
+          description: Аккаунт найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '404':
+          description: Аккаунт не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
 
   /publications:
     post:
@@ -441,6 +488,46 @@ paths:
 
 components:
   schemas:
+    Account:
+      type: object
+      required:
+        - id
+        - instagram_user_id
+        - username
+        - has_access_token
+      properties:
+        id:
+          type: string
+          description: Внутренний ID аккаунта
+          example: "acc_123"
+        instagram_user_id:
+          type: string
+          description: ID пользователя в Instagram API
+          example: "17841400123456789"
+        username:
+          type: string
+          description: Имя пользователя Instagram
+          example: "my_instagram_account"
+        has_access_token:
+          type: boolean
+          description: Наличие активного access token
+          example: true
+
+    AccountListResponse:
+      type: object
+      required:
+        - accounts
+        - total
+      properties:
+        accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Account'
+        total:
+          type: integer
+          description: Общее количество аккаунтов
+          example: 3
+
     PublicationType:
       type: string
       enum:
@@ -687,6 +774,15 @@ components:
           example: "publication not found"
 
   parameters:
+    AccountId:
+      name: id
+      in: path
+      required: true
+      description: ID аккаунта
+      schema:
+        type: string
+      example: "acc_123"
+
     PublicationId:
       name: id
       in: path
