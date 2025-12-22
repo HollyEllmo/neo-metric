@@ -67,6 +67,11 @@ type Scheduler struct {
 	CommentSyncInterval  time.Duration `yaml:"comment_sync_interval" env:"COMMENT_SYNC_INTERVAL" env-default:"5m"`
 	CommentSyncAge       time.Duration `yaml:"comment_sync_age" env:"COMMENT_SYNC_AGE" env-default:"10m"`
 	CommentSyncBatchSize int           `yaml:"comment_sync_batch_size" env:"COMMENT_SYNC_BATCH_SIZE" env-default:"10"`
+
+	// Direct message sync settings
+	DirectSyncInterval  time.Duration `yaml:"direct_sync_interval" env:"DIRECT_SYNC_INTERVAL" env-default:"10m"`
+	DirectSyncAge       time.Duration `yaml:"direct_sync_age" env:"DIRECT_SYNC_AGE" env-default:"30m"`
+	DirectSyncBatchSize int           `yaml:"direct_sync_batch_size" env:"DIRECT_SYNC_BATCH_SIZE" env-default:"5"`
 }
 
 // MustLoad loads configuration from environment and panics on error

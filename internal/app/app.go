@@ -23,10 +23,19 @@ import (
 	commentPolicy "github.com/vadim/neo-metric/internal/domain/comment/policy"
 	commentScheduler "github.com/vadim/neo-metric/internal/domain/comment/scheduler"
 	commentService "github.com/vadim/neo-metric/internal/domain/comment/service"
+	directDao "github.com/vadim/neo-metric/internal/domain/direct/dao"
+	directEntity "github.com/vadim/neo-metric/internal/domain/direct/entity"
+	directPolicy "github.com/vadim/neo-metric/internal/domain/direct/policy"
+	directScheduler "github.com/vadim/neo-metric/internal/domain/direct/scheduler"
+	directService "github.com/vadim/neo-metric/internal/domain/direct/service"
 	"github.com/vadim/neo-metric/internal/domain/publication/dao"
 	"github.com/vadim/neo-metric/internal/domain/publication/policy"
 	publicationScheduler "github.com/vadim/neo-metric/internal/domain/publication/scheduler"
 	"github.com/vadim/neo-metric/internal/domain/publication/service"
+	templateDao "github.com/vadim/neo-metric/internal/domain/template/dao"
+	templateEntity "github.com/vadim/neo-metric/internal/domain/template/entity"
+	templatePolicy "github.com/vadim/neo-metric/internal/domain/template/policy"
+	templateService "github.com/vadim/neo-metric/internal/domain/template/service"
 	"github.com/vadim/neo-metric/internal/httpx/upstream/instagram"
 	"github.com/vadim/neo-metric/internal/storage"
 )
@@ -43,9 +52,12 @@ type App struct {
 	// Domain policies (interfaces for HTTP handlers)
 	publicationPolicy *policy.Policy
 	commentPolicy     *commentPolicy.Policy
+	directPolicy      *directPolicy.Policy
+	templatePolicy    *templatePolicy.Policy
 
-	// Comment service for sync scheduler
+	// Services for sync schedulers
 	commentService *commentService.Service
+	directService  *directService.Service
 
 	// Account lister for HTTP handlers
 	accountLister *accountListerAdapter
@@ -58,6 +70,9 @@ type App struct {
 
 	// Comment sync scheduler
 	commentSyncScheduler *commentScheduler.Scheduler
+
+	// Direct message sync scheduler
+	directSyncScheduler *directScheduler.Scheduler
 }
 
 // NewApp creates and initializes the application
@@ -121,6 +136,20 @@ func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
 				logger,
 			)
 		}
+
+		// Initialize direct message sync scheduler
+		if app.directService != nil && app.pg != nil {
+			app.directSyncScheduler = directScheduler.New(
+				app.directService,
+				&accountProviderAdapter{dao.NewAccountPostgres(app.pg)},
+				directScheduler.Config{
+					Interval:  cfg.Scheduler.DirectSyncInterval,
+					SyncAge:   cfg.Scheduler.DirectSyncAge,
+					BatchSize: cfg.Scheduler.DirectSyncBatchSize,
+				},
+				logger,
+			)
+		}
 	}
 
 	return app, nil
@@ -174,6 +203,15 @@ func (a *App) initDomains(_ context.Context) error {
 	var commentRepo commentService.CommentRepository
 	var commentSyncRepo commentService.SyncStatusRepository
 
+	// Direct message repositories
+	var directConvRepo directService.ConversationRepository
+	var directMsgRepo directService.MessageRepository
+	var directConvSyncRepo directService.ConversationSyncRepository
+	var directAccountSyncRepo directService.AccountSyncRepository
+
+	// Template repository
+	var templateRepo templateService.TemplateRepository
+
 	if a.pg != nil {
 		// Use PostgreSQL implementations
 		publicationsRepo = dao.NewPublicationPostgres(a.pg)
@@ -186,6 +224,15 @@ func (a *App) initDomains(_ context.Context) error {
 		// Comment repositories
 		commentRepo = &commentRepoAdapter{commentDao.NewCommentPostgres(a.pg)}
 		commentSyncRepo = &commentSyncRepoAdapter{commentDao.NewSyncStatusPostgres(a.pg)}
+
+		// Direct message repositories
+		directConvRepo = &directConvRepoAdapter{directDao.NewConversationPostgres(a.pg)}
+		directMsgRepo = &directMsgRepoAdapter{directDao.NewMessagePostgres(a.pg)}
+		directConvSyncRepo = &directConvSyncRepoAdapter{directDao.NewConversationSyncPostgres(a.pg)}
+		directAccountSyncRepo = &directAccountSyncRepoAdapter{directDao.NewAccountSyncPostgres(a.pg)}
+
+		// Template repository
+		templateRepo = &templateRepoAdapter{templateDao.NewTemplatePostgres(a.pg)}
 	}
 
 	// Initialize publication service
@@ -202,6 +249,27 @@ func (a *App) initDomains(_ context.Context) error {
 		a.commentService = commentService.New(igCommentAdapter)
 	}
 	a.commentPolicy = commentPolicy.New(a.commentService, accountProvider)
+
+	// Initialize direct message domain
+	igDirectAdapter := &instagramDirectAdapter{igClient}
+	if directConvRepo != nil && directMsgRepo != nil {
+		a.directService = directService.NewWithRepo(
+			igDirectAdapter,
+			directConvRepo,
+			directMsgRepo,
+			directConvSyncRepo,
+			directAccountSyncRepo,
+		)
+	} else {
+		a.directService = directService.New(igDirectAdapter)
+	}
+	a.directPolicy = directPolicy.New(a.directService, accountProvider)
+
+	// Initialize template domain
+	if templateRepo != nil {
+		tmplService := templateService.New(templateRepo)
+		a.templatePolicy = templatePolicy.New(tmplService)
+	}
 
 	return nil
 }
@@ -225,6 +293,18 @@ func (a *App) registerRoutes() {
 		// Comment routes
 		commentHandler := httpcontroller.NewCommentHandler(a.commentPolicy)
 		commentHandler.RegisterRoutes(r)
+
+		// Direct message routes
+		if a.directPolicy != nil {
+			directHandler := httpcontroller.NewDirectHandler(a.directPolicy)
+			directHandler.RegisterRoutes(r)
+		}
+
+		// Template routes
+		if a.templatePolicy != nil {
+			templateHandler := httpcontroller.NewTemplateHandler(a.templatePolicy)
+			templateHandler.RegisterRoutes(r)
+		}
 
 		// Account routes
 		if a.accountLister != nil {
@@ -276,6 +356,11 @@ func (a *App) Run(ctx context.Context) error {
 		go a.commentSyncScheduler.Start(ctx)
 	}
 
+	// Start direct message sync scheduler if enabled
+	if a.directSyncScheduler != nil {
+		go a.directSyncScheduler.Start(ctx)
+	}
+
 	// Channel to receive errors from server
 	errCh := make(chan error, 1)
 
@@ -316,6 +401,11 @@ func (a *App) Shutdown(ctx context.Context) error {
 	// Stop comment sync scheduler
 	if a.commentSyncScheduler != nil {
 		a.commentSyncScheduler.Stop()
+	}
+
+	// Stop direct message sync scheduler
+	if a.directSyncScheduler != nil {
+		a.directSyncScheduler.Stop()
 	}
 
 	// Shutdown HTTP server with timeout
@@ -620,4 +710,347 @@ type publicationRepoAdapter struct {
 
 func (a *publicationRepoAdapter) GetAccountIDByMediaID(ctx context.Context, mediaID string) (string, error) {
 	return a.repo.GetAccountIDByMediaID(ctx, mediaID)
+}
+
+// instagramDirectAdapter adapts instagram.Client to directService.InstagramClient
+type instagramDirectAdapter struct {
+	client *instagram.Client
+}
+
+func (a *instagramDirectAdapter) GetConversations(ctx context.Context, userID, accessToken string, limit int, after string) (*directService.ConversationsResult, error) {
+	out, err := a.client.GetDMConversations(ctx, instagram.GetDMConversationsInput{
+		UserID:      userID,
+		AccessToken: accessToken,
+		Limit:       limit,
+		After:       after,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	conversations := make([]directEntity.Conversation, len(out.Data))
+	for i, c := range out.Data {
+		var lastMessageAt *time.Time
+		if c.UpdatedTime != "" {
+			if t, err := time.Parse(time.RFC3339, c.UpdatedTime); err == nil {
+				lastMessageAt = &t
+			}
+		}
+
+		conv := directEntity.Conversation{
+			ID:            c.ID,
+			LastMessageAt: lastMessageAt,
+		}
+
+		// Extract participant info
+		if len(c.Participants.Data) > 0 {
+			p := c.Participants.Data[0]
+			conv.ParticipantID = p.ID
+			conv.ParticipantUsername = p.Username
+			conv.ParticipantName = p.Name
+		}
+
+		conversations[i] = conv
+	}
+
+	var nextCursor string
+	hasMore := false
+	if out.Paging != nil {
+		nextCursor = out.Paging.Cursors.After
+		hasMore = out.Paging.Next != ""
+	}
+
+	return &directService.ConversationsResult{
+		Conversations: conversations,
+		NextCursor:    nextCursor,
+		HasMore:       hasMore,
+	}, nil
+}
+
+func (a *instagramDirectAdapter) GetMessages(ctx context.Context, conversationID, accessToken string, limit int, after string) (*directService.MessagesResult, error) {
+	out, err := a.client.GetDMMessages(ctx, instagram.GetDMMessagesInput{
+		ConversationID: conversationID,
+		AccessToken:    accessToken,
+		Limit:          limit,
+		After:          after,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	messages := make([]directEntity.Message, len(out.Data))
+	for i, m := range out.Data {
+		timestamp, _ := time.Parse(time.RFC3339, m.CreatedTime)
+
+		msg := directEntity.Message{
+			ID:             m.ID,
+			ConversationID: conversationID,
+			Text:           m.Message,
+			Timestamp:      timestamp,
+		}
+
+		if m.From != nil {
+			msg.SenderID = m.From.ID
+		}
+
+		// Determine message type from attachments
+		if m.Attachments != nil && len(m.Attachments.Data) > 0 {
+			att := m.Attachments.Data[0]
+			if att.ImageData != nil {
+				msg.Type = directEntity.MessageTypeImage
+				msg.MediaURL = att.ImageData.URL
+				msg.MediaType = "image"
+			} else if att.VideoData != nil {
+				msg.Type = directEntity.MessageTypeVideo
+				msg.MediaURL = att.VideoData.URL
+				msg.MediaType = "video"
+			} else {
+				msg.Type = directEntity.MessageTypeText
+			}
+		} else {
+			msg.Type = directEntity.MessageTypeText
+		}
+
+		messages[i] = msg
+	}
+
+	var nextCursor string
+	hasMore := false
+	if out.Paging != nil {
+		nextCursor = out.Paging.Cursors.After
+		hasMore = out.Paging.Next != ""
+	}
+
+	return &directService.MessagesResult{
+		Messages:   messages,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+	}, nil
+}
+
+func (a *instagramDirectAdapter) SendMessage(ctx context.Context, userID, recipientID, accessToken, message string) (*directService.SendMessageResult, error) {
+	out, err := a.client.SendDMMessage(ctx, instagram.SendDMMessageInput{
+		UserID:      userID,
+		RecipientID: recipientID,
+		AccessToken: accessToken,
+		Message:     message,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &directService.SendMessageResult{MessageID: out.MessageID}, nil
+}
+
+func (a *instagramDirectAdapter) SendMediaMessage(ctx context.Context, userID, recipientID, accessToken, mediaURL, mediaType string) (*directService.SendMessageResult, error) {
+	out, err := a.client.SendDMMediaMessage(ctx, instagram.SendDMMediaMessageInput{
+		UserID:      userID,
+		RecipientID: recipientID,
+		AccessToken: accessToken,
+		MediaURL:    mediaURL,
+		MediaType:   mediaType,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &directService.SendMessageResult{MessageID: out.MessageID}, nil
+}
+
+func (a *instagramDirectAdapter) GetParticipant(ctx context.Context, userID, accessToken string) (*directService.ParticipantResult, error) {
+	out, err := a.client.GetDMParticipant(ctx, instagram.GetDMParticipantInput{
+		UserID:      userID,
+		AccessToken: accessToken,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &directService.ParticipantResult{
+		ID:             out.ID,
+		Username:       out.Username,
+		Name:           out.Name,
+		FollowersCount: out.FollowersCount,
+	}, nil
+}
+
+// directConvRepoAdapter adapts directDao.ConversationPostgres to directService.ConversationRepository
+type directConvRepoAdapter struct {
+	repo *directDao.ConversationPostgres
+}
+
+func (a *directConvRepoAdapter) Upsert(ctx context.Context, conv *directEntity.Conversation) error {
+	return a.repo.Upsert(ctx, conv)
+}
+
+func (a *directConvRepoAdapter) UpsertBatch(ctx context.Context, convs []directEntity.Conversation) error {
+	return a.repo.UpsertBatch(ctx, convs)
+}
+
+func (a *directConvRepoAdapter) GetByID(ctx context.Context, id string) (*directEntity.Conversation, error) {
+	return a.repo.GetByID(ctx, id)
+}
+
+func (a *directConvRepoAdapter) GetByAccountID(ctx context.Context, accountID string, limit, offset int) ([]directEntity.Conversation, error) {
+	return a.repo.GetByAccountID(ctx, accountID, limit, offset)
+}
+
+func (a *directConvRepoAdapter) Search(ctx context.Context, accountID, query string, limit, offset int) ([]directEntity.Conversation, error) {
+	return a.repo.Search(ctx, accountID, query, limit, offset)
+}
+
+func (a *directConvRepoAdapter) Delete(ctx context.Context, id string) error {
+	return a.repo.Delete(ctx, id)
+}
+
+func (a *directConvRepoAdapter) Count(ctx context.Context, accountID string) (int64, error) {
+	return a.repo.Count(ctx, accountID)
+}
+
+// directMsgRepoAdapter adapts directDao.MessagePostgres to directService.MessageRepository
+type directMsgRepoAdapter struct {
+	repo *directDao.MessagePostgres
+}
+
+func (a *directMsgRepoAdapter) Upsert(ctx context.Context, msg *directEntity.Message) error {
+	return a.repo.Upsert(ctx, msg)
+}
+
+func (a *directMsgRepoAdapter) UpsertBatch(ctx context.Context, msgs []directEntity.Message) error {
+	return a.repo.UpsertBatch(ctx, msgs)
+}
+
+func (a *directMsgRepoAdapter) GetByID(ctx context.Context, id string) (*directEntity.Message, error) {
+	return a.repo.GetByID(ctx, id)
+}
+
+func (a *directMsgRepoAdapter) GetByConversationID(ctx context.Context, conversationID string, limit, offset int) ([]directEntity.Message, error) {
+	return a.repo.GetByConversationID(ctx, conversationID, limit, offset)
+}
+
+func (a *directMsgRepoAdapter) Delete(ctx context.Context, id string) error {
+	return a.repo.Delete(ctx, id)
+}
+
+func (a *directMsgRepoAdapter) Count(ctx context.Context, conversationID string) (int64, error) {
+	return a.repo.Count(ctx, conversationID)
+}
+
+func (a *directMsgRepoAdapter) GetStatistics(ctx context.Context, filter directEntity.StatisticsFilter) (*directEntity.Statistics, error) {
+	return a.repo.GetStatistics(ctx, filter)
+}
+
+func (a *directMsgRepoAdapter) GetHeatmap(ctx context.Context, filter directEntity.StatisticsFilter) (*directEntity.Heatmap, error) {
+	return a.repo.GetHeatmap(ctx, filter)
+}
+
+// directConvSyncRepoAdapter adapts directDao.ConversationSyncPostgres to directService.ConversationSyncRepository
+type directConvSyncRepoAdapter struct {
+	repo *directDao.ConversationSyncPostgres
+}
+
+func (a *directConvSyncRepoAdapter) GetSyncStatus(ctx context.Context, conversationID string) (*directService.ConversationSyncStatus, error) {
+	status, err := a.repo.GetSyncStatus(ctx, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if status == nil {
+		return nil, nil
+	}
+	return &directService.ConversationSyncStatus{
+		ConversationID:         status.ConversationID,
+		LastSyncedAt:           status.LastSyncedAt,
+		NextCursor:             status.NextCursor,
+		SyncComplete:           status.SyncComplete,
+		OldestMessageTimestamp: status.OldestMessageTimestamp,
+	}, nil
+}
+
+func (a *directConvSyncRepoAdapter) UpdateSyncStatus(ctx context.Context, status *directService.ConversationSyncStatus) error {
+	return a.repo.UpdateSyncStatus(ctx, &directDao.ConversationSyncStatus{
+		ConversationID:         status.ConversationID,
+		LastSyncedAt:           status.LastSyncedAt,
+		NextCursor:             status.NextCursor,
+		SyncComplete:           status.SyncComplete,
+		OldestMessageTimestamp: status.OldestMessageTimestamp,
+	})
+}
+
+func (a *directConvSyncRepoAdapter) GetConversationsNeedingSync(ctx context.Context, accountID string, olderThan time.Duration, limit int) ([]string, error) {
+	return a.repo.GetConversationsNeedingSync(ctx, accountID, olderThan, limit)
+}
+
+// directAccountSyncRepoAdapter adapts directDao.AccountSyncPostgres to directService.AccountSyncRepository
+type directAccountSyncRepoAdapter struct {
+	repo *directDao.AccountSyncPostgres
+}
+
+func (a *directAccountSyncRepoAdapter) GetSyncStatus(ctx context.Context, accountID string) (*directService.AccountSyncStatus, error) {
+	status, err := a.repo.GetSyncStatus(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if status == nil {
+		return nil, nil
+	}
+	return &directService.AccountSyncStatus{
+		AccountID:    status.AccountID,
+		LastSyncedAt: status.LastSyncedAt,
+		NextCursor:   status.NextCursor,
+		SyncComplete: status.SyncComplete,
+	}, nil
+}
+
+func (a *directAccountSyncRepoAdapter) UpdateSyncStatus(ctx context.Context, status *directService.AccountSyncStatus) error {
+	return a.repo.UpdateSyncStatus(ctx, &directDao.AccountSyncStatus{
+		AccountID:    status.AccountID,
+		LastSyncedAt: status.LastSyncedAt,
+		NextCursor:   status.NextCursor,
+		SyncComplete: status.SyncComplete,
+	})
+}
+
+func (a *directAccountSyncRepoAdapter) GetAccountsNeedingSync(ctx context.Context, olderThan time.Duration, limit int) ([]string, error) {
+	return a.repo.GetAccountsNeedingSync(ctx, olderThan, limit)
+}
+
+// templateRepoAdapter adapts templateDao.TemplatePostgres to templateService.TemplateRepository
+type templateRepoAdapter struct {
+	repo *templateDao.TemplatePostgres
+}
+
+func (a *templateRepoAdapter) Create(ctx context.Context, tmpl *templateEntity.Template) error {
+	return a.repo.Create(ctx, tmpl)
+}
+
+func (a *templateRepoAdapter) GetByID(ctx context.Context, id string) (*templateEntity.Template, error) {
+	return a.repo.GetByID(ctx, id)
+}
+
+func (a *templateRepoAdapter) Update(ctx context.Context, tmpl *templateEntity.Template) error {
+	return a.repo.Update(ctx, tmpl)
+}
+
+func (a *templateRepoAdapter) Delete(ctx context.Context, id string) error {
+	return a.repo.Delete(ctx, id)
+}
+
+func (a *templateRepoAdapter) List(ctx context.Context, filter templateService.ListFilter, opts templateService.ListOptions) ([]templateEntity.Template, error) {
+	return a.repo.List(ctx, templateDao.ListFilter{
+		AccountID: filter.AccountID,
+		Type:      filter.Type,
+	}, templateDao.ListOptions{
+		Limit:  opts.Limit,
+		Offset: opts.Offset,
+		SortBy: opts.SortBy,
+		Desc:   opts.Desc,
+	})
+}
+
+func (a *templateRepoAdapter) Count(ctx context.Context, filter templateService.ListFilter) (int64, error) {
+	return a.repo.Count(ctx, templateDao.ListFilter{
+		AccountID: filter.AccountID,
+		Type:      filter.Type,
+	})
+}
+
+func (a *templateRepoAdapter) IncrementUsageCount(ctx context.Context, id string) error {
+	return a.repo.IncrementUsageCount(ctx, id)
 }

@@ -572,3 +572,271 @@ func (c *Client) CreateComment(ctx context.Context, in CreateCommentInput) (*Cre
 
 	return &out, nil
 }
+
+// ============================================================================
+// Direct Messages API (Instagram Messenger Platform)
+// ============================================================================
+
+// DMConversationData represents a conversation from Instagram DM API
+type DMConversationData struct {
+	ID           string          `json:"id"`
+	Participants *DMParticipants `json:"participants,omitempty"`
+	Messages     *DMMessagesData `json:"messages,omitempty"`
+	UpdatedTime  string          `json:"updated_time,omitempty"`
+}
+
+// DMParticipants holds conversation participants
+type DMParticipants struct {
+	Data []DMParticipantData `json:"data"`
+}
+
+// DMParticipantData represents a participant in a conversation
+type DMParticipantData struct {
+	ID       string `json:"id"`
+	Username string `json:"username,omitempty"`
+	Name     string `json:"name,omitempty"`
+}
+
+// DMMessagesData holds messages in a conversation
+type DMMessagesData struct {
+	Data []DMMessageData `json:"data"`
+}
+
+// DMMessageData represents a message from Instagram DM API
+type DMMessageData struct {
+	ID          string             `json:"id"`
+	Message     string             `json:"message,omitempty"`
+	From        *DMParticipantData `json:"from,omitempty"`
+	CreatedTime string             `json:"created_time,omitempty"`
+	Attachments *DMAttachments     `json:"attachments,omitempty"`
+}
+
+// DMAttachments holds message attachments
+type DMAttachments struct {
+	Data []DMAttachment `json:"data"`
+}
+
+// DMAttachment represents a message attachment
+type DMAttachment struct {
+	ID        string             `json:"id"`
+	MimeType  string             `json:"mime_type,omitempty"`
+	Name      string             `json:"name,omitempty"`
+	Size      int64              `json:"size,omitempty"`
+	ImageData *DMAttachmentImage `json:"image_data,omitempty"`
+	VideoData *DMAttachmentVideo `json:"video_data,omitempty"`
+}
+
+// DMAttachmentImage represents image attachment data
+type DMAttachmentImage struct {
+	URL       string `json:"url"`
+	Width     int    `json:"width,omitempty"`
+	Height    int    `json:"height,omitempty"`
+	MaxWidth  int    `json:"max_width,omitempty"`
+	MaxHeight int    `json:"max_height,omitempty"`
+}
+
+// DMAttachmentVideo represents video attachment data
+type DMAttachmentVideo struct {
+	URL        string `json:"url"`
+	PreviewURL string `json:"preview_url,omitempty"`
+	Length     int    `json:"length,omitempty"`
+}
+
+// GetDMConversationsInput represents input for getting DM conversations
+type GetDMConversationsInput struct {
+	UserID      string
+	AccessToken string
+	Limit       int
+	After       string
+}
+
+// GetDMConversationsOutput represents output from getting conversations
+type GetDMConversationsOutput struct {
+	Data   []DMConversationData `json:"data"`
+	Paging *Paging              `json:"paging,omitempty"`
+}
+
+// GetDMConversations retrieves DM conversations for a user
+// GET /{user-id}/conversations
+func (c *Client) GetDMConversations(ctx context.Context, in GetDMConversationsInput) (*GetDMConversationsOutput, error) {
+	endpoint := fmt.Sprintf("%s/%s/%s/conversations", c.baseURL, c.apiVersion, in.UserID)
+
+	params := url.Values{}
+	params.Set("access_token", in.AccessToken)
+	params.Set("platform", "instagram")
+	params.Set("fields", "id,participants,messages{id,message,from,created_time},updated_time")
+
+	if in.Limit > 0 {
+		params.Set("limit", fmt.Sprintf("%d", in.Limit))
+	}
+	if in.After != "" {
+		params.Set("after", in.After)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+params.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	var out GetDMConversationsOutput
+	if err := c.do(req, &out); err != nil {
+		return nil, err
+	}
+
+	return &out, nil
+}
+
+// GetDMMessagesInput represents input for getting messages in a conversation
+type GetDMMessagesInput struct {
+	ConversationID string
+	AccessToken    string
+	Limit          int
+	After          string
+}
+
+// GetDMMessagesOutput represents output from getting messages
+type GetDMMessagesOutput struct {
+	Data   []DMMessageData `json:"data"`
+	Paging *Paging         `json:"paging,omitempty"`
+}
+
+// GetDMMessages retrieves messages in a conversation
+// GET /{conversation-id}/messages
+func (c *Client) GetDMMessages(ctx context.Context, in GetDMMessagesInput) (*GetDMMessagesOutput, error) {
+	endpoint := fmt.Sprintf("%s/%s/%s/messages", c.baseURL, c.apiVersion, in.ConversationID)
+
+	params := url.Values{}
+	params.Set("access_token", in.AccessToken)
+	params.Set("fields", "id,message,from,created_time,attachments{id,mime_type,name,size,image_data,video_data}")
+
+	if in.Limit > 0 {
+		params.Set("limit", fmt.Sprintf("%d", in.Limit))
+	}
+	if in.After != "" {
+		params.Set("after", in.After)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+params.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	var out GetDMMessagesOutput
+	if err := c.do(req, &out); err != nil {
+		return nil, err
+	}
+
+	return &out, nil
+}
+
+// SendDMMessageInput represents input for sending a DM message
+type SendDMMessageInput struct {
+	UserID      string // Instagram user ID of the sender (page-scoped)
+	RecipientID string // Instagram user ID of the recipient
+	AccessToken string
+	Message     string
+}
+
+// SendDMMessageOutput represents output from sending a message
+type SendDMMessageOutput struct {
+	RecipientID string `json:"recipient_id"`
+	MessageID   string `json:"message_id"`
+}
+
+// SendDMMessage sends a text message via Instagram DM
+// POST /{user-id}/messages
+func (c *Client) SendDMMessage(ctx context.Context, in SendDMMessageInput) (*SendDMMessageOutput, error) {
+	endpoint := fmt.Sprintf("%s/%s/%s/messages", c.baseURL, c.apiVersion, in.UserID)
+
+	params := url.Values{}
+	params.Set("access_token", in.AccessToken)
+	params.Set("recipient", fmt.Sprintf(`{"id":"%s"}`, in.RecipientID))
+	params.Set("message", fmt.Sprintf(`{"text":"%s"}`, in.Message))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"?"+params.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	var out SendDMMessageOutput
+	if err := c.do(req, &out); err != nil {
+		return nil, err
+	}
+
+	return &out, nil
+}
+
+// SendDMMediaMessageInput represents input for sending a media message
+type SendDMMediaMessageInput struct {
+	UserID      string
+	RecipientID string
+	AccessToken string
+	MediaURL    string
+	MediaType   string // "image" or "video"
+}
+
+// SendDMMediaMessage sends a media message via Instagram DM
+// POST /{user-id}/messages
+func (c *Client) SendDMMediaMessage(ctx context.Context, in SendDMMediaMessageInput) (*SendDMMessageOutput, error) {
+	endpoint := fmt.Sprintf("%s/%s/%s/messages", c.baseURL, c.apiVersion, in.UserID)
+
+	params := url.Values{}
+	params.Set("access_token", in.AccessToken)
+	params.Set("recipient", fmt.Sprintf(`{"id":"%s"}`, in.RecipientID))
+
+	// Build attachment based on media type
+	attachmentType := "image"
+	if in.MediaType == "video" {
+		attachmentType = "video"
+	}
+	params.Set("message", fmt.Sprintf(`{"attachment":{"type":"%s","payload":{"url":"%s"}}}`, attachmentType, in.MediaURL))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"?"+params.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	var out SendDMMessageOutput
+	if err := c.do(req, &out); err != nil {
+		return nil, err
+	}
+
+	return &out, nil
+}
+
+// GetDMParticipantInput represents input for getting participant info
+type GetDMParticipantInput struct {
+	UserID      string
+	AccessToken string
+}
+
+// GetDMParticipantOutput represents participant profile info
+type GetDMParticipantOutput struct {
+	ID             string `json:"id"`
+	Username       string `json:"username,omitempty"`
+	Name           string `json:"name,omitempty"`
+	ProfilePicURL  string `json:"profile_pic,omitempty"`
+	FollowersCount int    `json:"followers_count,omitempty"`
+}
+
+// GetDMParticipant retrieves profile info for a DM participant
+// GET /{user-id}
+func (c *Client) GetDMParticipant(ctx context.Context, in GetDMParticipantInput) (*GetDMParticipantOutput, error) {
+	endpoint := fmt.Sprintf("%s/%s/%s", c.baseURL, c.apiVersion, in.UserID)
+
+	params := url.Values{}
+	params.Set("access_token", in.AccessToken)
+	params.Set("fields", "id,username,name,profile_pic,followers_count")
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+params.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	var out GetDMParticipantOutput
+	if err := c.do(req, &out); err != nil {
+		return nil, err
+	}
+
+	return &out, nil
+}
