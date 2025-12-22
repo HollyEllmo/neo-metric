@@ -1,0 +1,732 @@
+openapi: 3.0.3
+info:
+  title: Neo-Metric Instagram API
+  description: |
+    API для взаимодействия с Instagram Graph API.
+
+    Поддерживает:
+    - Создание, редактирование и удаление публикаций (Post, Story, Reel)
+    - Отложенный постинг (scheduling)
+    - Немедленную публикацию
+
+    ## Статусы публикаций
+
+    | Статус | Описание |
+    |--------|----------|
+    | `draft` | Черновик, не запланирован |
+    | `scheduled` | Запланирован на определённое время |
+    | `published` | Успешно опубликован в Instagram |
+    | `error` | Ошибка при публикации |
+
+    ## Типы публикаций
+
+    | Тип | Описание | Ограничения |
+    |-----|----------|-------------|
+    | `post` | Обычный пост в ленту | До 10 медиафайлов (карусель) |
+    | `story` | История | Ровно 1 медиафайл |
+    | `reel` | Reels видео | Ровно 1 видеофайл |
+
+  version: 1.0.0
+  contact:
+    name: Vadim Galkin
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local development server
+  - url: https://api.example.com/api/v1
+    description: Production server
+
+tags:
+  - name: Publications
+    description: Управление публикациями Instagram
+  - name: Health
+    description: Проверка состояния сервиса
+
+paths:
+  /healthz:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Проверка работоспособности сервиса
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Сервис работает
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /readyz:
+    get:
+      tags:
+        - Health
+      summary: Readiness check
+      description: Проверка готовности сервиса к обработке запросов
+      operationId: readinessCheck
+      responses:
+        '200':
+          description: Сервис готов
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+
+  /publications:
+    post:
+      tags:
+        - Publications
+      summary: Создать публикацию
+      description: |
+        Создаёт новую публикацию (черновик или запланированную).
+
+        Если указан `scheduled_at`, публикация будет запланирована на это время.
+        Иначе создаётся черновик.
+      operationId: createPublication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePublicationRequest'
+            examples:
+              post:
+                summary: Создание поста
+                value:
+                  account_id: "acc_123"
+                  type: "post"
+                  caption: "Новый пост! #instagram #api"
+                  media:
+                    - url: "https://example.com/image1.jpg"
+                      type: "image"
+                      order: 0
+                  scheduled_at: "2025-12-25T10:00:00Z"
+              story:
+                summary: Создание истории
+                value:
+                  account_id: "acc_123"
+                  type: "story"
+                  media:
+                    - url: "https://example.com/story.jpg"
+                      type: "image"
+                      order: 0
+              reel:
+                summary: Создание Reel
+                value:
+                  account_id: "acc_123"
+                  type: "reel"
+                  caption: "Мой первый Reel!"
+                  media:
+                    - url: "https://example.com/video.mp4"
+                      type: "video"
+                      order: 0
+              carousel:
+                summary: Создание карусели
+                value:
+                  account_id: "acc_123"
+                  type: "post"
+                  caption: "Карусель изображений"
+                  media:
+                    - url: "https://example.com/image1.jpg"
+                      type: "image"
+                      order: 0
+                    - url: "https://example.com/image2.jpg"
+                      type: "image"
+                      order: 1
+                    - url: "https://example.com/image3.jpg"
+                      type: "image"
+                      order: 2
+      responses:
+        '201':
+          description: Публикация создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Publication'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    get:
+      tags:
+        - Publications
+      summary: Список публикаций
+      description: |
+        Получить список публикаций с возможностью фильтрации и пагинации.
+
+        Публикации отсортированы по `scheduled_at` (новые сверху).
+      operationId: listPublications
+      parameters:
+        - name: account_id
+          in: query
+          description: Фильтр по ID аккаунта
+          schema:
+            type: string
+          example: acc_123
+        - name: type
+          in: query
+          description: Фильтр по типу публикации
+          schema:
+            $ref: '#/components/schemas/PublicationType'
+        - name: status
+          in: query
+          description: Фильтр по статусу
+          schema:
+            $ref: '#/components/schemas/PublicationStatus'
+        - name: year
+          in: query
+          description: Фильтр по году (для календаря)
+          schema:
+            type: integer
+            example: 2025
+        - name: month
+          in: query
+          description: Фильтр по месяцу (1-12, для календаря)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+            example: 12
+        - name: limit
+          in: query
+          description: Количество записей на страницу (макс. 100)
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          description: Смещение для пагинации
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: Список публикаций
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicationListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /publications/{id}:
+    get:
+      tags:
+        - Publications
+      summary: Получить публикацию
+      description: Получить публикацию по ID
+      operationId: getPublication
+      parameters:
+        - $ref: '#/components/parameters/PublicationId'
+      responses:
+        '200':
+          description: Публикация найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Publication'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      tags:
+        - Publications
+      summary: Обновить публикацию
+      description: |
+        Обновить существующую публикацию.
+
+        **Важно:** Можно обновлять только публикации со статусом `draft` или `scheduled`.
+      operationId: updatePublication
+      parameters:
+        - $ref: '#/components/parameters/PublicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePublicationRequest'
+            examples:
+              updateCaption:
+                summary: Обновить текст
+                value:
+                  caption: "Обновлённый текст публикации"
+              reschedule:
+                summary: Перенести время
+                value:
+                  scheduled_at: "2025-12-26T15:00:00Z"
+              toDraft:
+                summary: Убрать из расписания
+                value:
+                  clear_schedule: true
+      responses:
+        '200':
+          description: Публикация обновлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Publication'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Публикацию нельзя редактировать (уже опубликована)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      tags:
+        - Publications
+      summary: Удалить публикацию
+      description: |
+        Удалить публикацию.
+
+        Для опубликованного контента можно дополнительно удалить из Instagram,
+        передав параметр `delete_from_instagram=true`.
+      operationId: deletePublication
+      parameters:
+        - $ref: '#/components/parameters/PublicationId'
+        - name: delete_from_instagram
+          in: query
+          description: Также удалить из Instagram (для опубликованных)
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '204':
+          description: Публикация удалена
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Публикацию нельзя удалить
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /publications/{id}/publish:
+    post:
+      tags:
+        - Publications
+      summary: Опубликовать сейчас
+      description: |
+        Немедленно опубликовать публикацию в Instagram.
+
+        Работает для публикаций со статусом `draft` или `scheduled`.
+      operationId: publishNow
+      parameters:
+        - $ref: '#/components/parameters/PublicationId'
+      responses:
+        '200':
+          description: Публикация опубликована
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Publication'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Публикацию нельзя опубликовать
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Превышен лимит публикаций Instagram (25 в день)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /publications/{id}/schedule:
+    post:
+      tags:
+        - Publications
+      summary: Запланировать публикацию
+      description: |
+        Запланировать публикацию на определённое время.
+
+        Время должно быть в будущем.
+      operationId: schedulePublication
+      parameters:
+        - $ref: '#/components/parameters/PublicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - scheduled_at
+              properties:
+                scheduled_at:
+                  type: string
+                  format: date-time
+                  description: Время публикации (RFC3339)
+                  example: "2025-12-25T10:00:00Z"
+      responses:
+        '200':
+          description: Публикация запланирована
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Publication'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Публикацию нельзя запланировать
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /publications/{id}/draft:
+    post:
+      tags:
+        - Publications
+      summary: Сохранить как черновик
+      description: |
+        Убрать публикацию из расписания и сохранить как черновик.
+
+        Очищает `scheduled_at` и устанавливает статус `draft`.
+      operationId: saveAsDraft
+      parameters:
+        - $ref: '#/components/parameters/PublicationId'
+      responses:
+        '200':
+          description: Публикация сохранена как черновик
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Publication'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Публикацию нельзя перевести в черновик
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  schemas:
+    PublicationType:
+      type: string
+      enum:
+        - post
+        - story
+        - reel
+      description: |
+        Тип публикации:
+        * `post` - Пост в ленту (до 10 медиа)
+        * `story` - История (1 медиа)
+        * `reel` - Reels видео (1 видео)
+
+    PublicationStatus:
+      type: string
+      enum:
+        - draft
+        - scheduled
+        - published
+        - error
+      description: |
+        Статус публикации:
+        * `draft` - Черновик
+        * `scheduled` - Запланирована
+        * `published` - Опубликована
+        * `error` - Ошибка публикации
+
+    MediaType:
+      type: string
+      enum:
+        - image
+        - video
+      description: Тип медиафайла
+
+    MediaItem:
+      type: object
+      required:
+        - id
+        - url
+        - type
+        - order
+      properties:
+        id:
+          type: string
+          description: Уникальный идентификатор медиа
+          example: "med_abc123"
+        url:
+          type: string
+          format: uri
+          description: URL медиафайла
+          example: "https://storage.example.com/images/photo.jpg"
+        type:
+          $ref: '#/components/schemas/MediaType'
+        order:
+          type: integer
+          description: Порядок в карусели (начиная с 0)
+          minimum: 0
+          example: 0
+        created_at:
+          type: string
+          format: date-time
+          description: Дата создания
+
+    Publication:
+      type: object
+      required:
+        - id
+        - account_id
+        - type
+        - status
+        - media
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          description: Уникальный идентификатор публикации
+          example: "pub_xyz789"
+        account_id:
+          type: string
+          description: ID Instagram аккаунта
+          example: "acc_123"
+        instagram_media_id:
+          type: string
+          description: ID медиа в Instagram (после публикации)
+          example: "17895695668004550"
+        type:
+          $ref: '#/components/schemas/PublicationType'
+        status:
+          $ref: '#/components/schemas/PublicationStatus'
+        caption:
+          type: string
+          description: Текст публикации (до 2200 символов)
+          maxLength: 2200
+          example: "Мой новый пост! #instagram"
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/MediaItem'
+          minItems: 1
+          maxItems: 10
+          description: Массив медиафайлов
+        scheduled_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Запланированное время публикации
+          example: "2025-12-25T10:00:00Z"
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Фактическое время публикации
+          example: "2025-12-25T10:00:05Z"
+        error_message:
+          type: string
+          nullable: true
+          description: Сообщение об ошибке (если status=error)
+          example: "Instagram API rate limit exceeded"
+        created_at:
+          type: string
+          format: date-time
+          description: Дата создания
+        updated_at:
+          type: string
+          format: date-time
+          description: Дата последнего обновления
+
+    CreatePublicationRequest:
+      type: object
+      required:
+        - account_id
+        - type
+        - media
+      properties:
+        account_id:
+          type: string
+          description: ID Instagram аккаунта
+          example: "acc_123"
+        type:
+          $ref: '#/components/schemas/PublicationType'
+        caption:
+          type: string
+          description: Текст публикации
+          maxLength: 2200
+          example: "Мой новый пост!"
+        media:
+          type: array
+          items:
+            type: object
+            required:
+              - url
+              - type
+              - order
+            properties:
+              url:
+                type: string
+                format: uri
+                description: URL медиафайла
+              type:
+                $ref: '#/components/schemas/MediaType'
+              order:
+                type: integer
+                description: Порядок в карусели
+                minimum: 0
+          minItems: 1
+          maxItems: 10
+        scheduled_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Время публикации (если не указано - создаётся черновик)
+          example: "2025-12-25T10:00:00Z"
+
+    UpdatePublicationRequest:
+      type: object
+      properties:
+        caption:
+          type: string
+          description: Новый текст публикации
+          maxLength: 2200
+        media:
+          type: array
+          items:
+            type: object
+            required:
+              - url
+              - type
+              - order
+            properties:
+              url:
+                type: string
+                format: uri
+              type:
+                $ref: '#/components/schemas/MediaType'
+              order:
+                type: integer
+                minimum: 0
+          minItems: 1
+          maxItems: 10
+          description: Новый список медиафайлов (заменяет существующие)
+        scheduled_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Новое время публикации
+        clear_schedule:
+          type: boolean
+          default: false
+          description: Убрать из расписания (перевести в draft)
+
+    PublicationListResponse:
+      type: object
+      required:
+        - publications
+        - total
+        - limit
+        - offset
+      properties:
+        publications:
+          type: array
+          items:
+            $ref: '#/components/schemas/Publication'
+        total:
+          type: integer
+          description: Общее количество публикаций (с учётом фильтров)
+          example: 42
+        limit:
+          type: integer
+          description: Размер страницы
+          example: 50
+        offset:
+          type: integer
+          description: Текущее смещение
+          example: 0
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Сообщение об ошибке
+          example: "publication not found"
+
+  parameters:
+    PublicationId:
+      name: id
+      in: path
+      required: true
+      description: ID публикации
+      schema:
+        type: string
+      example: "pub_xyz789"
+
+  responses:
+    BadRequest:
+      description: Неверный запрос
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            validation:
+              summary: Ошибка валидации
+              value:
+                error: "at least one media item is required"
+            invalidType:
+              summary: Неверный тип
+              value:
+                error: "invalid publication type"
+
+    NotFound:
+      description: Публикация не найдена
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "publication not found"
+
+    InternalError:
+      description: Внутренняя ошибка сервера
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "internal server error"
