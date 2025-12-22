@@ -1,7 +1,6 @@
 package instagram
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -341,19 +340,6 @@ func (c *Client) do(req *http.Request, out interface{}) error {
 	}
 
 	return nil
-}
-
-// doWithBody executes an HTTP request with a JSON body
-func (c *Client) doWithBody(req *http.Request, body interface{}, out interface{}) error {
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("encoding request body: %w", err)
-	}
-
-	req.Body = io.NopCloser(bytes.NewReader(jsonBody))
-	req.Header.Set("Content-Type", "application/json")
-
-	return c.do(req, out)
 }
 
 func joinStrings(strs []string, sep string) string {
