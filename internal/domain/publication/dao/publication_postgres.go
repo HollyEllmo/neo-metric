@@ -350,3 +350,19 @@ func (r *PublicationPostgres) SetPublished(ctx context.Context, id string, insta
 
 	return nil
 }
+
+// GetAccountIDByMediaID retrieves the account ID for a publication by its Instagram media ID
+func (r *PublicationPostgres) GetAccountIDByMediaID(ctx context.Context, instagramMediaID string) (string, error) {
+	query := `SELECT account_id FROM publications WHERE instagram_media_id = $1`
+
+	var accountID int64
+	err := r.pool.QueryRow(ctx, query, instagramMediaID).Scan(&accountID)
+	if err == pgx.ErrNoRows {
+		return "", fmt.Errorf("publication not found for media id: %s", instagramMediaID)
+	}
+	if err != nil {
+		return "", fmt.Errorf("getting account id: %w", err)
+	}
+
+	return fmt.Sprintf("%d", accountID), nil
+}

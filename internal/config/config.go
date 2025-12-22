@@ -62,6 +62,11 @@ type Database struct {
 type Scheduler struct {
 	Enabled  bool          `yaml:"enabled" env:"SCHEDULER_ENABLED" env-default:"false"`
 	Interval time.Duration `yaml:"interval" env:"SCHEDULER_INTERVAL" env-default:"1m"`
+
+	// Comment sync settings
+	CommentSyncInterval  time.Duration `yaml:"comment_sync_interval" env:"COMMENT_SYNC_INTERVAL" env-default:"5m"`
+	CommentSyncAge       time.Duration `yaml:"comment_sync_age" env:"COMMENT_SYNC_AGE" env-default:"10m"`
+	CommentSyncBatchSize int           `yaml:"comment_sync_batch_size" env:"COMMENT_SYNC_BATCH_SIZE" env-default:"10"`
 }
 
 // MustLoad loads configuration from environment and panics on error

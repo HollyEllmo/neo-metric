@@ -18,11 +18,14 @@ import (
 	"github.com/vadim/neo-metric/internal/config"
 	httpcontroller "github.com/vadim/neo-metric/internal/controller/http"
 	"github.com/vadim/neo-metric/internal/database"
+	commentDao "github.com/vadim/neo-metric/internal/domain/comment/dao"
 	commentEntity "github.com/vadim/neo-metric/internal/domain/comment/entity"
 	commentPolicy "github.com/vadim/neo-metric/internal/domain/comment/policy"
+	commentScheduler "github.com/vadim/neo-metric/internal/domain/comment/scheduler"
 	commentService "github.com/vadim/neo-metric/internal/domain/comment/service"
 	"github.com/vadim/neo-metric/internal/domain/publication/dao"
 	"github.com/vadim/neo-metric/internal/domain/publication/policy"
+	publicationScheduler "github.com/vadim/neo-metric/internal/domain/publication/scheduler"
 	"github.com/vadim/neo-metric/internal/domain/publication/service"
 	"github.com/vadim/neo-metric/internal/httpx/upstream/instagram"
 	"github.com/vadim/neo-metric/internal/storage"
@@ -41,11 +44,20 @@ type App struct {
 	publicationPolicy *policy.Policy
 	commentPolicy     *commentPolicy.Policy
 
+	// Comment service for sync scheduler
+	commentService *commentService.Service
+
 	// Account lister for HTTP handlers
 	accountLister *accountListerAdapter
 
+	// Publication repository for comment sync
+	publicationRepo dao.PublicationRepository
+
 	// Scheduler for processing scheduled publications
-	scheduler *Scheduler
+	scheduler *publicationScheduler.Scheduler
+
+	// Comment sync scheduler
+	commentSyncScheduler *commentScheduler.Scheduler
 }
 
 // NewApp creates and initializes the application
@@ -93,7 +105,22 @@ func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
 
 	// Initialize scheduler
 	if cfg.Scheduler.Enabled {
-		app.scheduler = NewScheduler(app.publicationPolicy, cfg.Scheduler.Interval, logger)
+		app.scheduler = publicationScheduler.New(app.publicationPolicy, cfg.Scheduler.Interval, logger)
+
+		// Initialize comment sync scheduler if we have the necessary components
+		if app.commentService != nil && app.publicationRepo != nil && app.accountLister != nil {
+			app.commentSyncScheduler = commentScheduler.New(
+				app.commentService,
+				&publicationRepoAdapter{app.publicationRepo},
+				&accountProviderAdapter{dao.NewAccountPostgres(app.pg)},
+				commentScheduler.Config{
+					Interval:  cfg.Scheduler.CommentSyncInterval,
+					SyncAge:   cfg.Scheduler.CommentSyncAge,
+					BatchSize: cfg.Scheduler.CommentSyncBatchSize,
+				},
+				logger,
+			)
+		}
 	}
 
 	return app, nil
@@ -144,6 +171,8 @@ func (a *App) initDomains(_ context.Context) error {
 	var publicationsRepo dao.PublicationRepository
 	var mediaRepo dao.MediaRepository
 	var accountProvider policy.AccountProvider
+	var commentRepo commentService.CommentRepository
+	var commentSyncRepo commentService.SyncStatusRepository
 
 	if a.pg != nil {
 		// Use PostgreSQL implementations
@@ -152,6 +181,11 @@ func (a *App) initDomains(_ context.Context) error {
 		accountRepo := dao.NewAccountPostgres(a.pg)
 		accountProvider = &accountProviderAdapter{accountRepo}
 		a.accountLister = &accountListerAdapter{accountRepo}
+		a.publicationRepo = publicationsRepo
+
+		// Comment repositories
+		commentRepo = &commentRepoAdapter{commentDao.NewCommentPostgres(a.pg)}
+		commentSyncRepo = &commentSyncRepoAdapter{commentDao.NewSyncStatusPostgres(a.pg)}
 	}
 
 	// Initialize publication service
@@ -161,8 +195,13 @@ func (a *App) initDomains(_ context.Context) error {
 	a.publicationPolicy = policy.New(pubService, &instagramPublisherAdapter{igPublisher}, accountProvider)
 
 	// Initialize comment domain
-	commentSvc := commentService.New(&instagramCommentAdapter{igClient})
-	a.commentPolicy = commentPolicy.New(commentSvc, accountProvider)
+	igCommentAdapter := &instagramCommentAdapter{igClient}
+	if commentRepo != nil && commentSyncRepo != nil {
+		a.commentService = commentService.NewWithRepo(igCommentAdapter, commentRepo, commentSyncRepo)
+	} else {
+		a.commentService = commentService.New(igCommentAdapter)
+	}
+	a.commentPolicy = commentPolicy.New(a.commentService, accountProvider)
 
 	return nil
 }
@@ -232,6 +271,11 @@ func (a *App) Run(ctx context.Context) error {
 		go a.scheduler.Start(ctx)
 	}
 
+	// Start comment sync scheduler if enabled
+	if a.commentSyncScheduler != nil {
+		go a.commentSyncScheduler.Start(ctx)
+	}
+
 	// Channel to receive errors from server
 	errCh := make(chan error, 1)
 
@@ -267,6 +311,11 @@ func (a *App) Shutdown(ctx context.Context) error {
 	// Stop scheduler
 	if a.scheduler != nil {
 		a.scheduler.Stop()
+	}
+
+	// Stop comment sync scheduler
+	if a.commentSyncScheduler != nil {
+		a.commentSyncScheduler.Stop()
 	}
 
 	// Shutdown HTTP server with timeout
@@ -487,4 +536,88 @@ func (a *instagramCommentAdapter) HideComment(ctx context.Context, commentID, ac
 		AccessToken: accessToken,
 		Hide:        hide,
 	})
+}
+
+// commentRepoAdapter adapts commentDao.CommentPostgres to commentService.CommentRepository
+type commentRepoAdapter struct {
+	repo *commentDao.CommentPostgres
+}
+
+func (a *commentRepoAdapter) Upsert(ctx context.Context, comment *commentEntity.Comment) error {
+	return a.repo.Upsert(ctx, comment)
+}
+
+func (a *commentRepoAdapter) UpsertBatch(ctx context.Context, comments []commentEntity.Comment) error {
+	return a.repo.UpsertBatch(ctx, comments)
+}
+
+func (a *commentRepoAdapter) GetByID(ctx context.Context, id string) (*commentEntity.Comment, error) {
+	return a.repo.GetByID(ctx, id)
+}
+
+func (a *commentRepoAdapter) GetByMediaID(ctx context.Context, mediaID string, limit int, offset int) ([]commentEntity.Comment, error) {
+	return a.repo.GetByMediaID(ctx, mediaID, limit, offset)
+}
+
+func (a *commentRepoAdapter) GetReplies(ctx context.Context, parentID string, limit int, offset int) ([]commentEntity.Comment, error) {
+	return a.repo.GetReplies(ctx, parentID, limit, offset)
+}
+
+func (a *commentRepoAdapter) Delete(ctx context.Context, id string) error {
+	return a.repo.Delete(ctx, id)
+}
+
+func (a *commentRepoAdapter) UpdateHidden(ctx context.Context, id string, hidden bool) error {
+	return a.repo.UpdateHidden(ctx, id, hidden)
+}
+
+func (a *commentRepoAdapter) Count(ctx context.Context, mediaID string) (int64, error) {
+	return a.repo.Count(ctx, mediaID)
+}
+
+func (a *commentRepoAdapter) CountReplies(ctx context.Context, parentID string) (int64, error) {
+	return a.repo.CountReplies(ctx, parentID)
+}
+
+// commentSyncRepoAdapter adapts commentDao.SyncStatusPostgres to commentService.SyncStatusRepository
+type commentSyncRepoAdapter struct {
+	repo *commentDao.SyncStatusPostgres
+}
+
+func (a *commentSyncRepoAdapter) GetSyncStatus(ctx context.Context, mediaID string) (*commentService.SyncStatus, error) {
+	status, err := a.repo.GetSyncStatus(ctx, mediaID)
+	if err != nil {
+		return nil, err
+	}
+	if status == nil {
+		return nil, nil
+	}
+	return &commentService.SyncStatus{
+		InstagramMediaID: status.InstagramMediaID,
+		LastSyncedAt:     status.LastSyncedAt,
+		NextCursor:       status.NextCursor,
+		SyncComplete:     status.SyncComplete,
+	}, nil
+}
+
+func (a *commentSyncRepoAdapter) UpdateSyncStatus(ctx context.Context, status *commentService.SyncStatus) error {
+	return a.repo.UpdateSyncStatus(ctx, &commentDao.SyncStatus{
+		InstagramMediaID: status.InstagramMediaID,
+		LastSyncedAt:     status.LastSyncedAt,
+		NextCursor:       status.NextCursor,
+		SyncComplete:     status.SyncComplete,
+	})
+}
+
+func (a *commentSyncRepoAdapter) GetMediaIDsNeedingSync(ctx context.Context, olderThan time.Duration, limit int) ([]string, error) {
+	return a.repo.GetMediaIDsNeedingSync(ctx, olderThan, limit)
+}
+
+// publicationRepoAdapter adapts dao.PublicationRepository for comment sync scheduler
+type publicationRepoAdapter struct {
+	repo dao.PublicationRepository
+}
+
+func (a *publicationRepoAdapter) GetAccountIDByMediaID(ctx context.Context, mediaID string) (string, error) {
+	return a.repo.GetAccountIDByMediaID(ctx, mediaID)
 }

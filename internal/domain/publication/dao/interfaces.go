@@ -54,6 +54,9 @@ type PublicationRepository interface {
 
 	// SetPublished marks a publication as published with Instagram media ID
 	SetPublished(ctx context.Context, id string, instagramMediaID string, publishedAt time.Time) error
+
+	// GetAccountIDByMediaID retrieves the account ID for a publication by its Instagram media ID
+	GetAccountIDByMediaID(ctx context.Context, instagramMediaID string) (string, error)
 }
 
 // MediaRepository defines the interface for media items data access

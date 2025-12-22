@@ -1,4 +1,4 @@
-package app
+package scheduler
 
 import (
 	"context"
@@ -23,8 +23,8 @@ type Scheduler struct {
 	mu        sync.Mutex
 }
 
-// NewScheduler creates a new scheduler
-func NewScheduler(processor ScheduledPublicationProcessor, interval time.Duration, logger *slog.Logger) *Scheduler {
+// New creates a new scheduler
+func New(processor ScheduledPublicationProcessor, interval time.Duration, logger *slog.Logger) *Scheduler {
 	return &Scheduler{
 		processor: processor,
 		interval:  interval,
@@ -43,7 +43,7 @@ func (s *Scheduler) Start(ctx context.Context) {
 	s.running = true
 	s.mu.Unlock()
 
-	s.logger.Info("scheduler started", "interval", s.interval)
+	s.logger.Info("publication scheduler started", "interval", s.interval)
 
 	s.wg.Add(1)
 	go s.run(ctx)
@@ -61,7 +61,7 @@ func (s *Scheduler) Stop() {
 
 	close(s.stopCh)
 	s.wg.Wait()
-	s.logger.Info("scheduler stopped")
+	s.logger.Info("publication scheduler stopped")
 }
 
 // run is the main scheduler loop
