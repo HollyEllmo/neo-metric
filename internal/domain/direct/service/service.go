@@ -499,7 +499,7 @@ func (s *Service) SyncConversations(ctx context.Context, accountID, userID, acce
 			return fmt.Errorf("fetching conversations: %w", err)
 		}
 
-		log.Printf("[DEBUG] SyncConversations: got %d conversations, hasMore=%v, cursor=%s", len(result.Conversations), result.HasMore, cursor)
+		// log.Printf("[DEBUG] SyncConversations: got %d conversations, hasMore=%v, cursor=%s", len(result.Conversations), result.HasMore, cursor)
 
 		// Track consecutive empty pages to prevent infinite loops
 		if len(result.Conversations) == 0 {
@@ -531,9 +531,9 @@ func (s *Service) SyncConversations(ctx context.Context, accountID, userID, acce
 					case errCh <- err:
 					default:
 					}
-				} else {
-					log.Printf("[DEBUG] UpsertBatch: saved %d conversations", len(convs))
-				}
+				} // else {
+				// 	log.Printf("[DEBUG] UpsertBatch: saved %d conversations", len(convs))
+				// }
 			}(conversations)
 		}
 

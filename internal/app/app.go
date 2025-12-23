@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -761,12 +760,12 @@ func (a *instagramDirectAdapter) GetConversations(ctx context.Context, userID, a
 		return nil, err
 	}
 
-	// Debug: log raw API response structure
-	log.Printf("[DEBUG] GetConversations raw response: Data=%d items, Paging=%+v", len(out.Data), out.Paging)
-	for i, c := range out.Data {
-		log.Printf("[DEBUG]   Data[%d]: ID=%s, UpdatedTime=%s, Participants=%+v, Messages=%+v",
-			i, c.ID, c.UpdatedTime, c.Participants, c.Messages)
-	}
+	// Debug: log raw API response structure (commented out for production)
+	// log.Printf("[DEBUG] GetConversations raw response: Data=%d items, Paging=%+v", len(out.Data), out.Paging)
+	// for i, c := range out.Data {
+	// 	log.Printf("[DEBUG]   Data[%d]: ID=%s, UpdatedTime=%s, Participants=%+v, Messages=%+v",
+	// 		i, c.ID, c.UpdatedTime, c.Participants, c.Messages)
+	// }
 
 	conversations := make([]directEntity.Conversation, len(out.Data))
 	for i, c := range out.Data {
