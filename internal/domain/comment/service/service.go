@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/vadim/neo-metric/internal/domain/comment/entity"
@@ -177,24 +178,51 @@ func (s *Service) getCommentsWithCache(ctx context.Context, in GetCommentsInput)
 }
 
 // syncCommentsFromInstagram fetches all comments from Instagram and saves to DB
+// Saves each page incrementally and asynchronously
 func (s *Service) syncCommentsFromInstagram(ctx context.Context, mediaID, accessToken string) error {
 	var cursor string
-	var allComments []entity.Comment
+	var wg sync.WaitGroup
+	errCh := make(chan error, 1)
 
 	for {
 		// Check if context is cancelled
 		select {
 		case <-ctx.Done():
+			wg.Wait()
 			return ctx.Err()
+		default:
+		}
+
+		// Check for async errors
+		select {
+		case err := <-errCh:
+			wg.Wait()
+			return err
 		default:
 		}
 
 		result, err := s.ig.GetComments(ctx, mediaID, accessToken, 100, cursor)
 		if err != nil {
+			wg.Wait()
 			return err
 		}
 
-		allComments = append(allComments, result.Comments...)
+		// Save page asynchronously
+		if len(result.Comments) > 0 {
+			comments := make([]entity.Comment, len(result.Comments))
+			copy(comments, result.Comments)
+
+			wg.Add(1)
+			go func(c []entity.Comment) {
+				defer wg.Done()
+				if err := s.repo.UpsertBatch(ctx, c); err != nil {
+					select {
+					case errCh <- err:
+					default:
+					}
+				}
+			}(comments)
+		}
 
 		if !result.HasMore || result.NextCursor == "" {
 			break
@@ -202,9 +230,14 @@ func (s *Service) syncCommentsFromInstagram(ctx context.Context, mediaID, access
 		cursor = result.NextCursor
 	}
 
-	// Save all comments to DB
-	if err := s.repo.UpsertBatch(ctx, allComments); err != nil {
+	// Wait for all saves
+	wg.Wait()
+
+	// Check for errors
+	select {
+	case err := <-errCh:
 		return err
+	default:
 	}
 
 	// Update sync status

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/vadim/neo-metric/internal/domain/direct/entity"
@@ -288,17 +289,61 @@ func (s *Service) GetMessages(ctx context.Context, in GetMessagesInput) (*GetMes
 }
 
 // syncMessagesFromInstagram syncs messages from Instagram API to local database
+// Saves each page incrementally and asynchronously
 func (s *Service) syncMessagesFromInstagram(ctx context.Context, conversationID, accessToken string) error {
-	var allMessages []entity.Message
 	cursor := ""
+	var wg sync.WaitGroup
+	errCh := make(chan error, 1)
+	var oldestTimestamp *time.Time
+	var mu sync.Mutex
 
 	for {
+		// Check context cancellation
+		select {
+		case <-ctx.Done():
+			wg.Wait()
+			return ctx.Err()
+		default:
+		}
+
+		// Check for async errors
+		select {
+		case err := <-errCh:
+			wg.Wait()
+			return fmt.Errorf("async save failed: %w", err)
+		default:
+		}
+
 		result, err := s.ig.GetMessages(ctx, conversationID, accessToken, 100, cursor)
 		if err != nil {
+			wg.Wait()
 			return fmt.Errorf("fetching messages: %w", err)
 		}
 
-		allMessages = append(allMessages, result.Messages...)
+		// Save page asynchronously
+		if len(result.Messages) > 0 {
+			messages := make([]entity.Message, len(result.Messages))
+			copy(messages, result.Messages)
+
+			// Track oldest message timestamp
+			mu.Lock()
+			lastMsg := messages[len(messages)-1]
+			if oldestTimestamp == nil || lastMsg.Timestamp.Before(*oldestTimestamp) {
+				oldestTimestamp = &lastMsg.Timestamp
+			}
+			mu.Unlock()
+
+			wg.Add(1)
+			go func(msgs []entity.Message) {
+				defer wg.Done()
+				if err := s.msgRepo.UpsertBatch(ctx, msgs); err != nil {
+					select {
+					case errCh <- err:
+					default:
+					}
+				}
+			}(messages)
+		}
 
 		if !result.HasMore || result.NextCursor == "" {
 			break
@@ -306,20 +351,17 @@ func (s *Service) syncMessagesFromInstagram(ctx context.Context, conversationID,
 		cursor = result.NextCursor
 	}
 
-	// Batch upsert messages
-	if len(allMessages) > 0 {
-		if err := s.msgRepo.UpsertBatch(ctx, allMessages); err != nil {
-			return fmt.Errorf("upserting messages: %w", err)
-		}
+	// Wait for all saves
+	wg.Wait()
+
+	// Check for errors
+	select {
+	case err := <-errCh:
+		return fmt.Errorf("async save failed: %w", err)
+	default:
 	}
 
 	// Update sync status
-	var oldestTimestamp *time.Time
-	if len(allMessages) > 0 {
-		oldest := allMessages[len(allMessages)-1].Timestamp
-		oldestTimestamp = &oldest
-	}
-
 	if err := s.convSyncRepo.UpdateSyncStatus(ctx, &ConversationSyncStatus{
 		ConversationID:         conversationID,
 		LastSyncedAt:           time.Now(),
@@ -421,33 +463,60 @@ func (s *Service) SendMediaMessage(ctx context.Context, in SendMediaMessageInput
 }
 
 // SyncConversations syncs conversations list from Instagram (for scheduler)
+// Saves each page incrementally and asynchronously to avoid memory buildup
 func (s *Service) SyncConversations(ctx context.Context, accountID, userID, accessToken string) error {
 	if s.convRepo == nil {
 		return fmt.Errorf("repository required for sync")
 	}
 
-	var allConversations []entity.Conversation
 	cursor := ""
+	var wg sync.WaitGroup
+	errCh := make(chan error, 1) // Buffer for first error
 
 	for {
 		// Check if context is cancelled
 		select {
 		case <-ctx.Done():
+			wg.Wait()
 			return ctx.Err()
+		default:
+		}
+
+		// Check if async save failed
+		select {
+		case err := <-errCh:
+			wg.Wait()
+			return fmt.Errorf("async save failed: %w", err)
 		default:
 		}
 
 		result, err := s.ig.GetConversations(ctx, userID, accessToken, 100, cursor)
 		if err != nil {
+			wg.Wait()
 			return fmt.Errorf("fetching conversations: %w", err)
 		}
 
-		// Set account ID for all conversations
-		for i := range result.Conversations {
-			result.Conversations[i].AccountID = accountID
-		}
+		// Save page asynchronously
+		if len(result.Conversations) > 0 {
+			// Set account ID for all conversations
+			conversations := make([]entity.Conversation, len(result.Conversations))
+			copy(conversations, result.Conversations)
+			for i := range conversations {
+				conversations[i].AccountID = accountID
+			}
 
-		allConversations = append(allConversations, result.Conversations...)
+			wg.Add(1)
+			go func(convs []entity.Conversation) {
+				defer wg.Done()
+				if err := s.convRepo.UpsertBatch(ctx, convs); err != nil {
+					// Send error only if channel is empty
+					select {
+					case errCh <- err:
+					default:
+					}
+				}
+			}(conversations)
+		}
 
 		if !result.HasMore || result.NextCursor == "" {
 			break
@@ -455,11 +524,14 @@ func (s *Service) SyncConversations(ctx context.Context, accountID, userID, acce
 		cursor = result.NextCursor
 	}
 
-	// Batch upsert conversations
-	if len(allConversations) > 0 {
-		if err := s.convRepo.UpsertBatch(ctx, allConversations); err != nil {
-			return fmt.Errorf("upserting conversations: %w", err)
-		}
+	// Wait for all async saves to complete
+	wg.Wait()
+
+	// Check for any errors from async saves
+	select {
+	case err := <-errCh:
+		return fmt.Errorf("async save failed: %w", err)
+	default:
 	}
 
 	// Update account sync status
