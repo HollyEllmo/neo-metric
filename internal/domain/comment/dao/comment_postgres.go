@@ -31,6 +31,8 @@ type CommentRepository interface {
 	Count(ctx context.Context, mediaID string) (int64, error)
 	// CountReplies returns the total count of replies to a comment
 	CountReplies(ctx context.Context, parentID string) (int64, error)
+	// GetStatistics retrieves aggregated comment statistics for an account
+	GetStatistics(ctx context.Context, accountID string, topPostsLimit int) (*entity.CommentStatistics, error)
 }
 
 // SyncStatusRepository defines the interface for sync status tracking
@@ -417,4 +419,82 @@ func (r *SyncStatusPostgres) GetMediaIDsNeedingSync(ctx context.Context, olderTh
 	}
 
 	return mediaIDs, nil
+}
+
+// GetStatistics retrieves aggregated comment statistics for an account
+func (r *CommentPostgres) GetStatistics(ctx context.Context, accountID string, topPostsLimit int) (*entity.CommentStatistics, error) {
+	stats := &entity.CommentStatistics{}
+
+	// Get total comments count for account's publications
+	totalQuery := `
+		SELECT COUNT(*)
+		FROM comments c
+		JOIN publications p ON p.instagram_media_id = c.instagram_media_id
+		WHERE p.account_id = $1 AND p.status = 'published'
+	`
+	if err := r.pool.QueryRow(ctx, totalQuery, accountID).Scan(&stats.TotalComments); err != nil {
+		return nil, fmt.Errorf("counting total comments: %w", err)
+	}
+
+	// Get replied comments count (replies made by account owner)
+	repliedQuery := `
+		SELECT COUNT(*)
+		FROM comments c
+		JOIN publications p ON p.instagram_media_id = c.instagram_media_id
+		JOIN instagram_accounts ia ON ia.id = p.account_id
+		WHERE p.account_id = $1
+		  AND p.status = 'published'
+		  AND c.username = ia.username
+	`
+	if err := r.pool.QueryRow(ctx, repliedQuery, accountID).Scan(&stats.RepliedComments); err != nil {
+		return nil, fmt.Errorf("counting replied comments: %w", err)
+	}
+
+	// Get average comments per post
+	avgQuery := `
+		SELECT COALESCE(AVG(comment_count), 0)
+		FROM (
+			SELECT COUNT(*) as comment_count
+			FROM publications p
+			LEFT JOIN comments c ON c.instagram_media_id = p.instagram_media_id
+			WHERE p.account_id = $1
+			  AND p.status = 'published'
+			  AND p.instagram_media_id IS NOT NULL
+			GROUP BY p.id
+		) subq
+	`
+	if err := r.pool.QueryRow(ctx, avgQuery, accountID).Scan(&stats.AvgCommentsPerPost); err != nil {
+		return nil, fmt.Errorf("calculating avg comments: %w", err)
+	}
+
+	// Get top posts by comment count
+	if topPostsLimit <= 0 {
+		topPostsLimit = 5
+	}
+	topQuery := `
+		SELECT p.instagram_media_id, COALESCE(p.caption, ''), COUNT(c.id) as comments_count
+		FROM publications p
+		LEFT JOIN comments c ON c.instagram_media_id = p.instagram_media_id
+		WHERE p.account_id = $1
+		  AND p.status = 'published'
+		  AND p.instagram_media_id IS NOT NULL
+		GROUP BY p.id, p.instagram_media_id, p.caption
+		ORDER BY comments_count DESC
+		LIMIT $2
+	`
+	rows, err := r.pool.Query(ctx, topQuery, accountID, topPostsLimit)
+	if err != nil {
+		return nil, fmt.Errorf("querying top posts: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var post entity.TopPost
+		if err := rows.Scan(&post.MediaID, &post.Caption, &post.CommentsCount); err != nil {
+			return nil, fmt.Errorf("scanning top post: %w", err)
+		}
+		stats.TopPosts = append(stats.TopPosts, post)
+	}
+
+	return stats, nil
 }

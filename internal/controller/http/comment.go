@@ -21,6 +21,7 @@ type CommentPolicy interface {
 	Reply(ctx context.Context, in policy.ReplyInput) (*policy.ReplyOutput, error)
 	Delete(ctx context.Context, in policy.DeleteInput) error
 	Hide(ctx context.Context, in policy.HideInput) error
+	GetStatistics(ctx context.Context, in policy.GetStatisticsInput) (*entity.CommentStatistics, error)
 }
 
 // CommentHandler handles HTTP requests for comments
@@ -38,6 +39,9 @@ func (h *CommentHandler) RegisterRoutes(r chi.Router) {
 	r.Route("/comments", func(r chi.Router) {
 		// Get comments for a media
 		r.Get("/media/{mediaId}", h.GetComments())
+
+		// Get statistics
+		r.Get("/statistics", h.GetStatistics())
 
 		// Get replies to a comment
 		r.Get("/{commentId}/replies", h.GetReplies())
@@ -294,6 +298,38 @@ func (h *CommentHandler) Hide() http.HandlerFunc {
 		}
 
 		response.OK(w, map[string]bool{"hidden": req.Hide})
+	}
+}
+
+// GetStatistics handles GET /comments/statistics
+func (h *CommentHandler) GetStatistics() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID := r.URL.Query().Get("account_id")
+		if accountID == "" {
+			response.BadRequest(w, "account_id is required")
+			return
+		}
+
+		topPostsLimit := 5
+		if l := r.URL.Query().Get("top_posts_limit"); l != "" {
+			if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+				topPostsLimit = parsed
+				if topPostsLimit > 20 {
+					topPostsLimit = 20
+				}
+			}
+		}
+
+		stats, err := h.policy.GetStatistics(r.Context(), policy.GetStatisticsInput{
+			AccountID:     accountID,
+			TopPostsLimit: topPostsLimit,
+		})
+		if err != nil {
+			handleCommentError(w, err)
+			return
+		}
+
+		response.OK(w, stats)
 	}
 }
 

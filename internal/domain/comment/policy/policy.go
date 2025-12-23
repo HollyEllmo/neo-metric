@@ -20,6 +20,7 @@ type CommentService interface {
 	Reply(ctx context.Context, in service.ReplyInput) (string, error)
 	Delete(ctx context.Context, in service.DeleteInput) error
 	Hide(ctx context.Context, in service.HideInput) error
+	GetStatistics(ctx context.Context, accountID string, topPostsLimit int) (*entity.CommentStatistics, error)
 }
 
 // Policy handles business policies for comments
@@ -207,4 +208,15 @@ func (p *Policy) Hide(ctx context.Context, in HideInput) error {
 		AccessToken: accessToken,
 		Hide:        in.Hide,
 	})
+}
+
+// GetStatisticsInput represents input for getting comment statistics
+type GetStatisticsInput struct {
+	AccountID     string
+	TopPostsLimit int
+}
+
+// GetStatistics retrieves aggregated comment statistics for an account
+func (p *Policy) GetStatistics(ctx context.Context, in GetStatisticsInput) (*entity.CommentStatistics, error) {
+	return p.svc.GetStatistics(ctx, in.AccountID, in.TopPostsLimit)
 }

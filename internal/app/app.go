@@ -669,6 +669,10 @@ func (a *commentRepoAdapter) CountReplies(ctx context.Context, parentID string) 
 	return a.repo.CountReplies(ctx, parentID)
 }
 
+func (a *commentRepoAdapter) GetStatistics(ctx context.Context, accountID string, topPostsLimit int) (*commentEntity.CommentStatistics, error) {
+	return a.repo.GetStatistics(ctx, accountID, topPostsLimit)
+}
+
 // commentSyncRepoAdapter adapts commentDao.SyncStatusPostgres to commentService.SyncStatusRepository
 type commentSyncRepoAdapter struct {
 	repo *commentDao.SyncStatusPostgres

@@ -568,6 +568,48 @@ paths:
   # Comments API
   # ============================================================================
 
+  /comments/statistics:
+    get:
+      tags:
+        - Comments
+      summary: Статистика комментариев
+      description: |
+        Получить агрегированную статистику комментариев для аккаунта.
+
+        **Включает:**
+        - Общее количество комментариев
+        - Количество ответов от аккаунта
+        - Среднее количество комментариев на пост
+        - Топ публикаций по количеству комментариев
+      operationId: getCommentStatistics
+      parameters:
+        - name: account_id
+          in: query
+          required: true
+          description: ID аккаунта
+          schema:
+            type: string
+          example: "acc_123"
+        - name: top_posts_limit
+          in: query
+          description: Количество топ-постов (макс. 20)
+          schema:
+            type: integer
+            default: 5
+            minimum: 1
+            maximum: 20
+      responses:
+        '200':
+          description: Статистика комментариев
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentStatistics'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /comments/media/{mediaId}:
     get:
       tags:
@@ -1765,6 +1807,60 @@ components:
           type: integer
           description: Черновики
           example: 1
+
+    CommentStatistics:
+      type: object
+      required:
+        - total_comments
+        - replied_comments
+        - avg_comments_per_post
+        - top_posts
+      properties:
+        total_comments:
+          type: integer
+          format: int64
+          description: Общее количество комментариев
+          example: 1250
+        replied_comments:
+          type: integer
+          format: int64
+          description: Количество ответов от аккаунта
+          example: 320
+        avg_comments_per_post:
+          type: number
+          format: float
+          description: Среднее количество комментариев на пост
+          example: 25.5
+        top_posts:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopPost'
+          description: Топ публикаций по количеству комментариев
+
+    TopPost:
+      type: object
+      required:
+        - media_id
+        - comments_count
+      properties:
+        media_id:
+          type: string
+          description: ID медиа в Instagram
+          example: "17895695668004550"
+        caption:
+          type: string
+          description: Текст публикации
+          example: "Мой новый пост!"
+        thumbnail:
+          type: string
+          format: uri
+          description: URL миниатюры
+          example: "https://instagram.com/thumbnail.jpg"
+        comments_count:
+          type: integer
+          format: int64
+          description: Количество комментариев
+          example: 156
 
     Error:
       type: object

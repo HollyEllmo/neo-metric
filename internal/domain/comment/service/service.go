@@ -28,6 +28,7 @@ type CommentRepository interface {
 	UpdateHidden(ctx context.Context, id string, hidden bool) error
 	Count(ctx context.Context, mediaID string) (int64, error)
 	CountReplies(ctx context.Context, parentID string) (int64, error)
+	GetStatistics(ctx context.Context, accountID string, topPostsLimit int) (*entity.CommentStatistics, error)
 }
 
 // SyncStatus represents the synchronization status for a media's comments
@@ -393,4 +394,12 @@ func (s *Service) GetMediaIDsNeedingSync(ctx context.Context, olderThan time.Dur
 		return nil, nil
 	}
 	return s.syncRepo.GetMediaIDsNeedingSync(ctx, olderThan, limit)
+}
+
+// GetStatistics retrieves aggregated comment statistics for an account
+func (s *Service) GetStatistics(ctx context.Context, accountID string, topPostsLimit int) (*entity.CommentStatistics, error) {
+	if s.repo == nil {
+		return nil, nil
+	}
+	return s.repo.GetStatistics(ctx, accountID, topPostsLimit)
 }
