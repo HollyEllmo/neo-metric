@@ -772,8 +772,16 @@ func (a *instagramDirectAdapter) GetConversations(ctx context.Context, userID, a
 	for i, c := range out.Data {
 		var lastMessageAt *time.Time
 		if c.UpdatedTime != "" {
-			if t, err := time.Parse(time.RFC3339, c.UpdatedTime); err == nil {
-				lastMessageAt = &t
+			// Instagram uses format "2024-02-06T13:41:22+0000", try multiple formats
+			for _, layout := range []string{
+				"2006-01-02T15:04:05-0700",
+				"2006-01-02T15:04:05Z0700",
+				time.RFC3339,
+			} {
+				if t, err := time.Parse(layout, c.UpdatedTime); err == nil {
+					lastMessageAt = &t
+					break
+				}
 			}
 		}
 
@@ -782,12 +790,27 @@ func (a *instagramDirectAdapter) GetConversations(ctx context.Context, userID, a
 			LastMessageAt: lastMessageAt,
 		}
 
-		// Extract participant info
-		if len(c.Participants.Data) > 0 {
-			p := c.Participants.Data[0]
-			conv.ParticipantID = p.ID
-			conv.ParticipantUsername = p.Username
-			conv.ParticipantName = p.Name
+		// Extract participant info - find the OTHER party (not the owner)
+		if c.Participants != nil {
+			for _, p := range c.Participants.Data {
+				if p.ID != userID { // Skip the owner, take the other party
+					conv.ParticipantID = p.ID
+					conv.ParticipantUsername = p.Username
+					conv.ParticipantName = p.Name
+					break
+				}
+			}
+		}
+
+		// Extract last message info
+		if c.Messages != nil && len(c.Messages.Data) > 0 {
+			lastMsg := c.Messages.Data[0]
+			conv.LastMessageText = lastMsg.Message
+
+			// Check if last message is from the owner
+			if lastMsg.From != nil {
+				conv.LastMessageIsFromMe = lastMsg.From.ID == userID
+			}
 		}
 
 		conversations[i] = conv
