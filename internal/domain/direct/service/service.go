@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -472,6 +473,8 @@ func (s *Service) SyncConversations(ctx context.Context, accountID, userID, acce
 	cursor := ""
 	var wg sync.WaitGroup
 	errCh := make(chan error, 1) // Buffer for first error
+	emptyPages := 0              // Counter for consecutive empty pages
+	const maxEmptyPages = 3      // Stop after this many consecutive empty pages
 
 	for {
 		// Check if context is cancelled
@@ -496,6 +499,19 @@ func (s *Service) SyncConversations(ctx context.Context, accountID, userID, acce
 			return fmt.Errorf("fetching conversations: %w", err)
 		}
 
+		log.Printf("[DEBUG] SyncConversations: got %d conversations, hasMore=%v, cursor=%s", len(result.Conversations), result.HasMore, cursor)
+
+		// Track consecutive empty pages to prevent infinite loops
+		if len(result.Conversations) == 0 {
+			emptyPages++
+			if emptyPages >= maxEmptyPages {
+				log.Printf("[WARN] SyncConversations: stopping after %d consecutive empty pages (possible API permission issue)", emptyPages)
+				break
+			}
+		} else {
+			emptyPages = 0 // Reset counter on non-empty page
+		}
+
 		// Save page asynchronously
 		if len(result.Conversations) > 0 {
 			// Set account ID for all conversations
@@ -509,11 +525,14 @@ func (s *Service) SyncConversations(ctx context.Context, accountID, userID, acce
 			go func(convs []entity.Conversation) {
 				defer wg.Done()
 				if err := s.convRepo.UpsertBatch(ctx, convs); err != nil {
+					log.Printf("[ERROR] UpsertBatch failed: %v", err)
 					// Send error only if channel is empty
 					select {
 					case errCh <- err:
 					default:
 					}
+				} else {
+					log.Printf("[DEBUG] UpsertBatch: saved %d conversations", len(convs))
 				}
 			}(conversations)
 		}

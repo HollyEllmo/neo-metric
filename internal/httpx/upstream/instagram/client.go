@@ -360,6 +360,7 @@ func (c *Client) do(req *http.Request, out interface{}) error {
 			"status", resp.StatusCode,
 			"duration_ms", duration.Milliseconds(),
 			"body_size", len(body),
+			"body", string(body),
 		)
 	}
 
