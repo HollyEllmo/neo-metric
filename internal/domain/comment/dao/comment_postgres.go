@@ -66,12 +66,13 @@ func NewCommentPostgres(pool *pgxpool.Pool) *CommentPostgres {
 // Upsert inserts or updates a comment
 func (r *CommentPostgres) Upsert(ctx context.Context, comment *entity.Comment) error {
 	query := `
-		INSERT INTO comments (id, instagram_media_id, parent_id, username, text, like_count, is_hidden, timestamp, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+		INSERT INTO comments (id, instagram_media_id, parent_id, author_id, username, text, like_count, is_hidden, timestamp, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
 		ON CONFLICT (id) DO UPDATE SET
 			like_count = EXCLUDED.like_count,
 			is_hidden = EXCLUDED.is_hidden,
 			text = EXCLUDED.text,
+			author_id = COALESCE(EXCLUDED.author_id, comments.author_id),
 			updated_at = NOW()
 	`
 
@@ -80,10 +81,16 @@ func (r *CommentPostgres) Upsert(ctx context.Context, comment *entity.Comment) e
 		parentID = &comment.ParentID
 	}
 
+	var authorID *string
+	if comment.AuthorID != "" {
+		authorID = &comment.AuthorID
+	}
+
 	_, err := r.pool.Exec(ctx, query,
 		comment.ID,
 		comment.MediaID,
 		parentID,
+		authorID,
 		comment.Username,
 		comment.Text,
 		comment.LikeCount,
@@ -105,12 +112,13 @@ func (r *CommentPostgres) UpsertBatch(ctx context.Context, comments []entity.Com
 
 	batch := &pgx.Batch{}
 	query := `
-		INSERT INTO comments (id, instagram_media_id, parent_id, username, text, like_count, is_hidden, timestamp, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+		INSERT INTO comments (id, instagram_media_id, parent_id, author_id, username, text, like_count, is_hidden, timestamp, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
 		ON CONFLICT (id) DO UPDATE SET
 			like_count = EXCLUDED.like_count,
 			is_hidden = EXCLUDED.is_hidden,
 			text = EXCLUDED.text,
+			author_id = COALESCE(EXCLUDED.author_id, comments.author_id),
 			updated_at = NOW()
 	`
 
@@ -119,10 +127,15 @@ func (r *CommentPostgres) UpsertBatch(ctx context.Context, comments []entity.Com
 		if comment.ParentID != "" {
 			parentID = &comment.ParentID
 		}
+		var authorID *string
+		if comment.AuthorID != "" {
+			authorID = &comment.AuthorID
+		}
 		batch.Queue(query,
 			comment.ID,
 			comment.MediaID,
 			parentID,
+			authorID,
 			comment.Username,
 			comment.Text,
 			comment.LikeCount,
@@ -146,7 +159,7 @@ func (r *CommentPostgres) UpsertBatch(ctx context.Context, comments []entity.Com
 // GetByID retrieves a comment by ID
 func (r *CommentPostgres) GetByID(ctx context.Context, id string) (*entity.Comment, error) {
 	query := `
-		SELECT id, instagram_media_id, parent_id, username, text, like_count, is_hidden, timestamp
+		SELECT id, instagram_media_id, parent_id, author_id, username, text, like_count, is_hidden, timestamp
 		FROM comments
 		WHERE id = $1
 	`
@@ -154,12 +167,13 @@ func (r *CommentPostgres) GetByID(ctx context.Context, id string) (*entity.Comme
 	row := r.pool.QueryRow(ctx, query, id)
 
 	var comment entity.Comment
-	var parentID *string
+	var parentID, authorID *string
 
 	err := row.Scan(
 		&comment.ID,
 		&comment.MediaID,
 		&parentID,
+		&authorID,
 		&comment.Username,
 		&comment.Text,
 		&comment.LikeCount,
@@ -176,6 +190,9 @@ func (r *CommentPostgres) GetByID(ctx context.Context, id string) (*entity.Comme
 	if parentID != nil {
 		comment.ParentID = *parentID
 	}
+	if authorID != nil {
+		comment.AuthorID = *authorID
+	}
 
 	return &comment, nil
 }
@@ -183,7 +200,7 @@ func (r *CommentPostgres) GetByID(ctx context.Context, id string) (*entity.Comme
 // GetByMediaID retrieves comments for a media (excluding replies)
 func (r *CommentPostgres) GetByMediaID(ctx context.Context, mediaID string, limit int, offset int) ([]entity.Comment, error) {
 	query := `
-		SELECT id, instagram_media_id, parent_id, username, text, like_count, is_hidden, timestamp,
+		SELECT id, instagram_media_id, parent_id, author_id, username, text, like_count, is_hidden, timestamp,
 		       (SELECT COUNT(*) FROM comments c2 WHERE c2.parent_id = comments.id) as replies_count
 		FROM comments
 		WHERE instagram_media_id = $1 AND parent_id IS NULL
@@ -200,12 +217,13 @@ func (r *CommentPostgres) GetByMediaID(ctx context.Context, mediaID string, limi
 	var comments []entity.Comment
 	for rows.Next() {
 		var comment entity.Comment
-		var parentID *string
+		var parentID, authorID *string
 
 		err := rows.Scan(
 			&comment.ID,
 			&comment.MediaID,
 			&parentID,
+			&authorID,
 			&comment.Username,
 			&comment.Text,
 			&comment.LikeCount,
@@ -220,6 +238,9 @@ func (r *CommentPostgres) GetByMediaID(ctx context.Context, mediaID string, limi
 		if parentID != nil {
 			comment.ParentID = *parentID
 		}
+		if authorID != nil {
+			comment.AuthorID = *authorID
+		}
 
 		comments = append(comments, comment)
 	}
@@ -230,7 +251,7 @@ func (r *CommentPostgres) GetByMediaID(ctx context.Context, mediaID string, limi
 // GetReplies retrieves replies to a comment
 func (r *CommentPostgres) GetReplies(ctx context.Context, parentID string, limit int, offset int) ([]entity.Comment, error) {
 	query := `
-		SELECT id, instagram_media_id, parent_id, username, text, like_count, is_hidden, timestamp
+		SELECT id, instagram_media_id, parent_id, author_id, username, text, like_count, is_hidden, timestamp
 		FROM comments
 		WHERE parent_id = $1
 		ORDER BY timestamp ASC
@@ -246,12 +267,13 @@ func (r *CommentPostgres) GetReplies(ctx context.Context, parentID string, limit
 	var comments []entity.Comment
 	for rows.Next() {
 		var comment entity.Comment
-		var pID *string
+		var pID, authorID *string
 
 		err := rows.Scan(
 			&comment.ID,
 			&comment.MediaID,
 			&pID,
+			&authorID,
 			&comment.Username,
 			&comment.Text,
 			&comment.LikeCount,
@@ -264,6 +286,9 @@ func (r *CommentPostgres) GetReplies(ctx context.Context, parentID string, limit
 
 		if pID != nil {
 			comment.ParentID = *pID
+		}
+		if authorID != nil {
+			comment.AuthorID = *authorID
 		}
 
 		comments = append(comments, comment)

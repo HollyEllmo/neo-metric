@@ -2,14 +2,21 @@ package policy
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/vadim/neo-metric/internal/domain/comment/entity"
 	"github.com/vadim/neo-metric/internal/domain/comment/service"
 )
 
-// AccountProvider provides access token for an account
+// AccountProvider provides access token and user ID for an account
 type AccountProvider interface {
 	GetAccessToken(ctx context.Context, accountID string) (string, error)
+	GetInstagramUserID(ctx context.Context, accountID string) (string, error)
+}
+
+// DirectSender sends direct messages
+type DirectSender interface {
+	SendMessage(ctx context.Context, accountID, recipientID, message string) error
 }
 
 // CommentService defines the interface for comment operations
@@ -21,12 +28,14 @@ type CommentService interface {
 	Delete(ctx context.Context, in service.DeleteInput) error
 	Hide(ctx context.Context, in service.HideInput) error
 	GetStatistics(ctx context.Context, accountID string, topPostsLimit int) (*entity.CommentStatistics, error)
+	GetComment(ctx context.Context, commentID string) (*entity.Comment, error)
 }
 
 // Policy handles business policies for comments
 type Policy struct {
 	svc      CommentService
 	accounts AccountProvider
+	direct   DirectSender // optional, for send_to_direct
 }
 
 // New creates a new comment policy
@@ -35,6 +44,12 @@ func New(svc CommentService, accounts AccountProvider) *Policy {
 		svc:      svc,
 		accounts: accounts,
 	}
+}
+
+// WithDirectSender sets the DirectSender for send_to_direct functionality
+func (p *Policy) WithDirectSender(ds DirectSender) *Policy {
+	p.direct = ds
+	return p
 }
 
 // GetCommentsInput represents input for getting comments
@@ -141,14 +156,17 @@ func (p *Policy) CreateComment(ctx context.Context, in CreateCommentInput) (*Cre
 
 // ReplyInput represents input for replying to a comment
 type ReplyInput struct {
-	AccountID string
-	CommentID string
-	Message   string
+	AccountID    string
+	CommentID    string
+	Message      string
+	SendToDirect bool // If true, also send the reply as a DM to comment author
 }
 
 // ReplyOutput represents output from replying to a comment
 type ReplyOutput struct {
-	ID string `json:"id"`
+	ID           string `json:"id"`
+	DirectSent   bool   `json:"direct_sent,omitempty"`   // Whether the DM was sent
+	DirectError  string `json:"direct_error,omitempty"`  // Error if DM failed (non-fatal)
 }
 
 // Reply posts a reply to a comment
@@ -167,7 +185,29 @@ func (p *Policy) Reply(ctx context.Context, in ReplyInput) (*ReplyOutput, error)
 		return nil, err
 	}
 
-	return &ReplyOutput{ID: id}, nil
+	output := &ReplyOutput{ID: id}
+
+	// Send to direct if requested
+	if in.SendToDirect && p.direct != nil {
+		// Get the original comment to find the author
+		comment, err := p.svc.GetComment(ctx, in.CommentID)
+		if err != nil {
+			output.DirectError = fmt.Sprintf("failed to get comment: %v", err)
+		} else if comment == nil {
+			output.DirectError = "comment not found"
+		} else if comment.AuthorID == "" {
+			output.DirectError = "comment author ID not available"
+		} else {
+			// Send DM to comment author
+			if err := p.direct.SendMessage(ctx, in.AccountID, comment.AuthorID, in.Message); err != nil {
+				output.DirectError = fmt.Sprintf("failed to send DM: %v", err)
+			} else {
+				output.DirectSent = true
+			}
+		}
+	}
+
+	return output, nil
 }
 
 // DeleteInput represents input for deleting a comment

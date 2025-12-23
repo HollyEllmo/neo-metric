@@ -9,6 +9,7 @@ import (
 type Comment struct {
 	ID              string    `json:"id"`
 	MediaID         string    `json:"media_id"`
+	AuthorID        string    `json:"author_id,omitempty"`         // Instagram user ID of comment author
 	Username        string    `json:"username"`
 	Text            string    `json:"text"`
 	Timestamp       time.Time `json:"timestamp"`

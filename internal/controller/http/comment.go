@@ -198,8 +198,16 @@ func (h *CommentHandler) CreateComment() http.HandlerFunc {
 
 // ReplyRequest represents the request body for replying to a comment
 type ReplyRequest struct {
-	AccountID string `json:"account_id"`
-	Message   string `json:"message"`
+	AccountID    string `json:"account_id"`
+	Message      string `json:"message"`
+	SendToDirect bool   `json:"send_to_direct"` // If true, also send the reply as a DM
+}
+
+// ReplyResponse represents the response for replying to a comment
+type ReplyResponse struct {
+	ID          string `json:"id"`
+	DirectSent  bool   `json:"direct_sent,omitempty"`  // Whether the DM was sent
+	DirectError string `json:"direct_error,omitempty"` // Error if DM failed (non-fatal)
 }
 
 // Reply handles POST /comments/{commentId}/replies
@@ -223,16 +231,21 @@ func (h *CommentHandler) Reply() http.HandlerFunc {
 		}
 
 		result, err := h.policy.Reply(r.Context(), policy.ReplyInput{
-			AccountID: req.AccountID,
-			CommentID: commentID,
-			Message:   req.Message,
+			AccountID:    req.AccountID,
+			CommentID:    commentID,
+			Message:      req.Message,
+			SendToDirect: req.SendToDirect,
 		})
 		if err != nil {
 			handleCommentError(w, err)
 			return
 		}
 
-		response.Created(w, CreateCommentResponse{ID: result.ID})
+		response.Created(w, ReplyResponse{
+			ID:          result.ID,
+			DirectSent:  result.DirectSent,
+			DirectError: result.DirectError,
+		})
 	}
 }
 

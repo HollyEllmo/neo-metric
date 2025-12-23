@@ -403,3 +403,11 @@ func (s *Service) GetStatistics(ctx context.Context, accountID string, topPostsL
 	}
 	return s.repo.GetStatistics(ctx, accountID, topPostsLimit)
 }
+
+// GetComment retrieves a comment by ID
+func (s *Service) GetComment(ctx context.Context, commentID string) (*entity.Comment, error) {
+	if s.repo == nil {
+		return nil, nil
+	}
+	return s.repo.GetByID(ctx, commentID)
+}

@@ -792,6 +792,11 @@ paths:
 
         **Ограничения:**
         - Максимальная длина текста: 2200 символов
+
+        **Send to Direct:**
+        При указании `send_to_direct: true` ответ также будет отправлен автору комментария в директ.
+        Для этого необходимо, чтобы комментарий был синхронизирован с сохранением author_id.
+        Ошибки отправки DM не влияют на создание ответа на комментарий.
       operationId: replyToComment
       parameters:
         - $ref: '#/components/parameters/CommentId'
@@ -807,7 +812,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CreateCommentResponse'
+                $ref: '#/components/schemas/ReplyResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1969,6 +1974,31 @@ components:
           description: Текст ответа
           maxLength: 2200
           example: "Спасибо!"
+        send_to_direct:
+          type: boolean
+          description: |
+            Если true, ответ также будет отправлен автору комментария в директ.
+            Требуется, чтобы author_id комментария был доступен в базе данных.
+          default: false
+          example: true
+
+    ReplyResponse:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+          description: ID созданного ответа
+          example: "17890123456789012"
+        direct_sent:
+          type: boolean
+          description: Был ли отправлен DM автору комментария
+          example: true
+        direct_error:
+          type: string
+          description: Ошибка при отправке DM (если была)
+          example: "comment author ID not available"
 
     CreateCommentResponse:
       type: object

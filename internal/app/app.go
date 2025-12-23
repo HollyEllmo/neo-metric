@@ -265,6 +265,15 @@ func (a *App) initDomains(_ context.Context) error {
 	}
 	a.directPolicy = directPolicy.New(a.directService, accountProvider)
 
+	// Wire DirectSender for send_to_direct functionality
+	if a.directService != nil && accountProvider != nil {
+		directSender := &directSenderAdapter{
+			directSvc: a.directService,
+			accounts:  accountProvider,
+		}
+		a.commentPolicy = a.commentPolicy.WithDirectSender(directSender)
+	}
+
 	// Initialize template domain
 	if templateRepo != nil {
 		tmplService := templateService.New(templateRepo)
@@ -1057,4 +1066,32 @@ func (a *templateRepoAdapter) Count(ctx context.Context, filter templateService.
 
 func (a *templateRepoAdapter) IncrementUsageCount(ctx context.Context, id string) error {
 	return a.repo.IncrementUsageCount(ctx, id)
+}
+
+// directSenderAdapter adapts directService to commentPolicy.DirectSender
+type directSenderAdapter struct {
+	directSvc *directService.Service
+	accounts  policy.AccountProvider
+}
+
+func (a *directSenderAdapter) SendMessage(ctx context.Context, accountID, recipientID, message string) error {
+	// Get access token and Instagram user ID for this account
+	accessToken, err := a.accounts.GetAccessToken(ctx, accountID)
+	if err != nil {
+		return fmt.Errorf("getting access token: %w", err)
+	}
+
+	userID, err := a.accounts.GetInstagramUserID(ctx, accountID)
+	if err != nil {
+		return fmt.Errorf("getting Instagram user ID: %w", err)
+	}
+
+	// Send the DM
+	_, err = a.directSvc.SendMessage(ctx, directService.SendMessageInput{
+		UserID:      userID,
+		RecipientID: recipientID,
+		AccessToken: accessToken,
+		Message:     message,
+	})
+	return err
 }
