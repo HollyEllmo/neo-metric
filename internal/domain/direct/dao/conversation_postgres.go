@@ -155,17 +155,22 @@ func (r *ConversationPostgres) GetByAccountID(ctx context.Context, accountID str
 	return r.scanConversations(rows)
 }
 
-// Search searches conversations by participant username or name
+// Search searches conversations by participant username, name, or message text
 func (r *ConversationPostgres) Search(ctx context.Context, accountID, query string, limit, offset int) ([]entity.Conversation, error) {
 	sqlQuery := `
-		SELECT id, account_id, participant_id, participant_username, participant_name,
-		       participant_avatar_url, participant_followers_count, last_message_text,
-		       last_message_at, last_message_is_from_me, unread_count, created_at, updated_at
-		FROM dm_conversations
-		WHERE account_id = $1
-		  AND to_tsvector('simple', COALESCE(participant_username, '') || ' ' || COALESCE(participant_name, ''))
-		      @@ plainto_tsquery('simple', $2)
-		ORDER BY last_message_at DESC NULLS LAST
+		SELECT DISTINCT c.id, c.account_id, c.participant_id, c.participant_username, c.participant_name,
+		       c.participant_avatar_url, c.participant_followers_count, c.last_message_text,
+		       c.last_message_at, c.last_message_is_from_me, c.unread_count, c.created_at, c.updated_at
+		FROM dm_conversations c
+		LEFT JOIN dm_messages m ON m.conversation_id = c.id
+		WHERE c.account_id = $1
+		  AND (
+		    to_tsvector('simple', COALESCE(c.participant_username, '') || ' ' || COALESCE(c.participant_name, ''))
+		        @@ plainto_tsquery('simple', $2)
+		    OR to_tsvector('simple', COALESCE(m.text, ''))
+		        @@ plainto_tsquery('simple', $2)
+		  )
+		ORDER BY c.last_message_at DESC NULLS LAST
 		LIMIT $3 OFFSET $4
 	`
 

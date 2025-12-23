@@ -366,3 +366,72 @@ func (r *PublicationPostgres) GetAccountIDByMediaID(ctx context.Context, instagr
 
 	return fmt.Sprintf("%d", accountID), nil
 }
+
+// GetStatistics retrieves aggregated publication statistics for an account
+func (r *PublicationPostgres) GetStatistics(ctx context.Context, accountID string) (*entity.PublicationStatistics, error) {
+	query := `
+		SELECT
+			type,
+			status,
+			COUNT(*) as count
+		FROM publications
+		WHERE account_id = $1
+		GROUP BY type, status
+	`
+
+	rows, err := r.pool.Query(ctx, query, accountID)
+	if err != nil {
+		return nil, fmt.Errorf("querying statistics: %w", err)
+	}
+	defer rows.Close()
+
+	stats := &entity.PublicationStatistics{}
+
+	for rows.Next() {
+		var pubType entity.PublicationType
+		var status entity.PublicationStatus
+		var count int
+
+		if err := rows.Scan(&pubType, &status, &count); err != nil {
+			return nil, fmt.Errorf("scanning statistics row: %w", err)
+		}
+
+		// Update totals
+		switch status {
+		case entity.PublicationStatusScheduled:
+			stats.ScheduledCount += count
+		case entity.PublicationStatusPublished:
+			stats.PublishedCount += count
+		case entity.PublicationStatusError:
+			stats.ErrorCount += count
+		case entity.PublicationStatusDraft:
+			stats.DraftCount += count
+		}
+
+		// Update by type
+		var typeStats *entity.TypeStats
+		switch pubType {
+		case entity.PublicationTypePost:
+			typeStats = &stats.ByType.Post
+		case entity.PublicationTypeStory:
+			typeStats = &stats.ByType.Story
+		case entity.PublicationTypeReel:
+			typeStats = &stats.ByType.Reel
+		}
+
+		if typeStats != nil {
+			switch status {
+			case entity.PublicationStatusScheduled:
+				typeStats.ScheduledCount += count
+			case entity.PublicationStatusPublished:
+				typeStats.PublishedCount += count
+			case entity.PublicationStatusError:
+				typeStats.ErrorCount += count
+			case entity.PublicationStatusDraft:
+				typeStats.DraftCount += count
+			}
+		}
+	}
+
+	return stats, nil
+}

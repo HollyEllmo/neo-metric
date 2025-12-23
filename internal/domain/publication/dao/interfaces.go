@@ -57,6 +57,9 @@ type PublicationRepository interface {
 
 	// GetAccountIDByMediaID retrieves the account ID for a publication by its Instagram media ID
 	GetAccountIDByMediaID(ctx context.Context, instagramMediaID string) (string, error)
+
+	// GetStatistics retrieves aggregated publication statistics for an account
+	GetStatistics(ctx context.Context, accountID string) (*entity.PublicationStatistics, error)
 }
 
 // MediaRepository defines the interface for media items data access

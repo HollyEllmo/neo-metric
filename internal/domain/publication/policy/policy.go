@@ -288,6 +288,11 @@ func (p *Policy) ProcessScheduledPublications(ctx context.Context) error {
 	return nil
 }
 
+// GetStatistics retrieves publication statistics for an account
+func (p *Policy) GetStatistics(ctx context.Context, accountID string) (*entity.PublicationStatistics, error) {
+	return p.svc.GetStatistics(ctx, accountID)
+}
+
 func isValidPublicationType(t entity.PublicationType) bool {
 	switch t {
 	case entity.PublicationTypePost, entity.PublicationTypeStory, entity.PublicationTypeReel:

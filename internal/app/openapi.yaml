@@ -529,6 +529,41 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /publications/statistics:
+    get:
+      tags:
+        - Publications
+      summary: Статистика публикаций
+      description: |
+        Получить агрегированную статистику публикаций для аккаунта.
+
+        **Включает:**
+        - Количество запланированных публикаций
+        - Количество опубликованных
+        - Количество с ошибками
+        - Количество черновиков
+        - Разбивка по типам (post/story/reel)
+      operationId: getPublicationStatistics
+      parameters:
+        - name: account_id
+          in: query
+          required: true
+          description: ID аккаунта
+          schema:
+            type: string
+          example: "acc_123"
+      responses:
+        '200':
+          description: Статистика публикаций
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicationStatistics'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   # ============================================================================
   # Comments API
   # ============================================================================
@@ -898,7 +933,7 @@ paths:
         - Direct
       summary: Поиск диалогов
       description: |
-        Поиск диалогов по имени пользователя или имени участника.
+        Поиск диалогов по имени пользователя, имени участника или тексту сообщений.
 
         Использует полнотекстовый поиск по локальной БД.
       operationId: searchConversations
@@ -1663,6 +1698,73 @@ components:
           type: integer
           description: Текущее смещение
           example: 0
+
+    PublicationStatistics:
+      type: object
+      required:
+        - scheduled_count
+        - published_count
+        - error_count
+        - draft_count
+        - by_type
+      properties:
+        scheduled_count:
+          type: integer
+          description: Количество запланированных публикаций
+          example: 5
+        published_count:
+          type: integer
+          description: Количество успешно опубликованных
+          example: 42
+        error_count:
+          type: integer
+          description: Количество публикаций с ошибками
+          example: 2
+        draft_count:
+          type: integer
+          description: Количество черновиков
+          example: 3
+        by_type:
+          $ref: '#/components/schemas/PublicationTypeBreakdown'
+
+    PublicationTypeBreakdown:
+      type: object
+      required:
+        - post
+        - story
+        - reel
+      properties:
+        post:
+          $ref: '#/components/schemas/PublicationTypeStats'
+        story:
+          $ref: '#/components/schemas/PublicationTypeStats'
+        reel:
+          $ref: '#/components/schemas/PublicationTypeStats'
+
+    PublicationTypeStats:
+      type: object
+      required:
+        - scheduled_count
+        - published_count
+        - error_count
+        - draft_count
+      properties:
+        scheduled_count:
+          type: integer
+          description: Запланировано
+          example: 2
+        published_count:
+          type: integer
+          description: Опубликовано
+          example: 15
+        error_count:
+          type: integer
+          description: С ошибками
+          example: 0
+        draft_count:
+          type: integer
+          description: Черновики
+          example: 1
 
     Error:
       type: object

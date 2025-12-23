@@ -25,6 +25,7 @@ type PublicationPolicy interface {
 	PublishNow(ctx context.Context, id string) (*entity.Publication, error)
 	SchedulePublication(ctx context.Context, id string, scheduledAt time.Time) (*entity.Publication, error)
 	SaveAsDraft(ctx context.Context, id string) (*entity.Publication, error)
+	GetStatistics(ctx context.Context, accountID string) (*entity.PublicationStatistics, error)
 }
 
 // PublicationHandler handles HTTP requests for publications
@@ -42,6 +43,7 @@ func (h *PublicationHandler) RegisterRoutes(r chi.Router) {
 	r.Route("/publications", func(r chi.Router) {
 		r.Post("/", h.Create())
 		r.Get("/", h.List())
+		r.Get("/statistics", h.GetStatistics())
 		r.Get("/{id}", h.Get())
 		r.Put("/{id}", h.Update())
 		r.Delete("/{id}", h.Delete())
@@ -390,6 +392,25 @@ func (h *PublicationHandler) SaveAsDraft() http.HandlerFunc {
 		}
 
 		response.OK(w, pub)
+	}
+}
+
+// GetStatistics handles GET /publications/statistics
+func (h *PublicationHandler) GetStatistics() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID := r.URL.Query().Get("account_id")
+		if accountID == "" {
+			response.BadRequest(w, "account_id is required")
+			return
+		}
+
+		stats, err := h.policy.GetStatistics(r.Context(), accountID)
+		if err != nil {
+			handleDomainError(w, err)
+			return
+		}
+
+		response.OK(w, stats)
 	}
 }
 

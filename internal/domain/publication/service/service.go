@@ -317,3 +317,8 @@ func (s *Service) Schedule(ctx context.Context, id string, scheduledAt time.Time
 		ScheduledAt: &scheduledAt,
 	})
 }
+
+// GetStatistics retrieves publication statistics for an account
+func (s *Service) GetStatistics(ctx context.Context, accountID string) (*entity.PublicationStatistics, error) {
+	return s.publications.GetStatistics(ctx, accountID)
+}
