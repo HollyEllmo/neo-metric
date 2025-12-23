@@ -182,6 +182,13 @@ func (s *Service) syncCommentsFromInstagram(ctx context.Context, mediaID, access
 	var allComments []entity.Comment
 
 	for {
+		// Check if context is cancelled
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		result, err := s.ig.GetComments(ctx, mediaID, accessToken, 100, cursor)
 		if err != nil {
 			return err

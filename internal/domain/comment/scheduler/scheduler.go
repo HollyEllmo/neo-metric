@@ -33,6 +33,7 @@ type Scheduler struct {
 	batchSize       int           // How many media to sync per run
 	logger          *slog.Logger
 	stopCh          chan struct{}
+	cancel          context.CancelFunc // Cancel function to stop in-flight operations
 	wg              sync.WaitGroup
 	running         bool
 	mu              sync.Mutex
@@ -83,6 +84,9 @@ func (s *Scheduler) Start(ctx context.Context) {
 		return
 	}
 	s.running = true
+
+	// Create a cancellable context for in-flight operations
+	ctx, s.cancel = context.WithCancel(ctx)
 	s.mu.Unlock()
 
 	s.logger.Info("comment sync scheduler started", "interval", s.interval, "sync_age", s.syncAge)
@@ -99,7 +103,13 @@ func (s *Scheduler) Stop() {
 		return
 	}
 	s.running = false
+	cancel := s.cancel
 	s.mu.Unlock()
+
+	// Cancel in-flight operations (HTTP requests, etc.)
+	if cancel != nil {
+		cancel()
+	}
 
 	close(s.stopCh)
 	s.wg.Wait()
@@ -114,8 +124,14 @@ func (s *Scheduler) run(ctx context.Context) {
 	defer ticker.Stop()
 
 	// Run after a short delay on start (to let the app initialize)
-	time.Sleep(10 * time.Second)
-	s.process(ctx)
+	select {
+	case <-time.After(10 * time.Second):
+		s.process(ctx)
+	case <-s.stopCh:
+		return
+	case <-ctx.Done():
+		return
+	}
 
 	for {
 		select {
@@ -147,6 +163,13 @@ func (s *Scheduler) process(ctx context.Context) {
 	s.logger.Info("syncing comments for media", "count", len(mediaIDs))
 
 	for _, mediaID := range mediaIDs {
+		// Check if context is cancelled
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
 		if err := s.syncMedia(ctx, mediaID); err != nil {
 			s.logger.Error("failed to sync comments", "media_id", mediaID, "error", err)
 			continue

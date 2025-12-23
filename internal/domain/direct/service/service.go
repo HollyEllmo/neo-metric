@@ -430,6 +430,13 @@ func (s *Service) SyncConversations(ctx context.Context, accountID, userID, acce
 	cursor := ""
 
 	for {
+		// Check if context is cancelled
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		result, err := s.ig.GetConversations(ctx, userID, accessToken, 100, cursor)
 		if err != nil {
 			return fmt.Errorf("fetching conversations: %w", err)

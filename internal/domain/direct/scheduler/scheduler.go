@@ -28,6 +28,7 @@ type Scheduler struct {
 	batchSize       int           // How many accounts to sync per run
 	logger          *slog.Logger
 	stopCh          chan struct{}
+	cancel          context.CancelFunc // Cancel function to stop in-flight operations
 	wg              sync.WaitGroup
 	running         bool
 	mu              sync.Mutex
@@ -76,6 +77,9 @@ func (s *Scheduler) Start(ctx context.Context) {
 		return
 	}
 	s.running = true
+
+	// Create a cancellable context for in-flight operations
+	ctx, s.cancel = context.WithCancel(ctx)
 	s.mu.Unlock()
 
 	s.logger.Info("direct sync scheduler started", "interval", s.interval, "sync_age", s.syncAge)
@@ -92,7 +96,13 @@ func (s *Scheduler) Stop() {
 		return
 	}
 	s.running = false
+	cancel := s.cancel
 	s.mu.Unlock()
+
+	// Cancel in-flight operations (HTTP requests, etc.)
+	if cancel != nil {
+		cancel()
+	}
 
 	close(s.stopCh)
 	s.wg.Wait()
@@ -107,8 +117,14 @@ func (s *Scheduler) run(ctx context.Context) {
 	defer ticker.Stop()
 
 	// Run after a short delay on start (to let the app initialize)
-	time.Sleep(15 * time.Second)
-	s.process(ctx)
+	select {
+	case <-time.After(15 * time.Second):
+		s.process(ctx)
+	case <-s.stopCh:
+		return
+	case <-ctx.Done():
+		return
+	}
 
 	for {
 		select {
@@ -140,6 +156,13 @@ func (s *Scheduler) process(ctx context.Context) {
 	s.logger.Info("syncing conversations for accounts", "count", len(accountIDs))
 
 	for _, accountID := range accountIDs {
+		// Check if context is cancelled
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
 		if err := s.syncAccount(ctx, accountID); err != nil {
 			s.logger.Error("failed to sync conversations", "account_id", accountID, "error", err)
 			continue
