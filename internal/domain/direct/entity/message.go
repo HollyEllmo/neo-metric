@@ -13,6 +13,8 @@ const (
 	MessageTypeLink         MessageType = "link"
 	MessageTypeStoryMention MessageType = "story_mention"
 	MessageTypeStoryReply   MessageType = "story_reply"
+	MessageTypeShare        MessageType = "share"   // Shared posts/reels
+	MessageTypeUnknown      MessageType = "unknown" // Unsupported content (GIPHYs, voice, etc.)
 )
 
 // Message represents a direct message

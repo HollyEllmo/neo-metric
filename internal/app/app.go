@@ -840,8 +840,14 @@ func (a *instagramDirectAdapter) GetMessages(ctx context.Context, conversationID
 		return nil, err
 	}
 
-	messages := make([]directEntity.Message, len(out.Data))
-	for i, m := range out.Data {
+	messages := make([]directEntity.Message, 0, len(out.Data))
+	for _, m := range out.Data {
+		// Skip messages without text and without attachments (unsupported content)
+		hasAttachments := m.Attachments != nil && len(m.Attachments.Data) > 0
+		if m.Message == "" && !hasAttachments {
+			continue
+		}
+
 		var timestamp time.Time
 		if m.CreatedTime != "" {
 			// Instagram uses format "2024-02-06T13:41:22+0000", try multiple formats
@@ -870,25 +876,34 @@ func (a *instagramDirectAdapter) GetMessages(ctx context.Context, conversationID
 			msg.IsFromMe = m.From.ID == userID
 		}
 
-		// Determine message type from attachments
-		if m.Attachments != nil && len(m.Attachments.Data) > 0 {
+		// Determine message type from attachments and content
+		if hasAttachments {
 			att := m.Attachments.Data[0]
-			if att.ImageData != nil {
+			switch {
+			case att.ImageData != nil:
 				msg.Type = directEntity.MessageTypeImage
 				msg.MediaURL = att.ImageData.URL
 				msg.MediaType = "image"
-			} else if att.VideoData != nil {
+			case att.VideoData != nil:
 				msg.Type = directEntity.MessageTypeVideo
 				msg.MediaURL = att.VideoData.URL
 				msg.MediaType = "video"
-			} else {
-				msg.Type = directEntity.MessageTypeText
+			case att.Type == "share" || att.ShareURL != "":
+				msg.Type = directEntity.MessageTypeShare
+				msg.MediaURL = att.ShareURL
+			case att.Type == "audio":
+				msg.Type = directEntity.MessageTypeAudio
+			case att.Type == "story_mention":
+				msg.Type = directEntity.MessageTypeStoryMention
+			default:
+				// Unknown attachment type - skip
+				continue
 			}
 		} else {
 			msg.Type = directEntity.MessageTypeText
 		}
 
-		messages[i] = msg
+		messages = append(messages, msg)
 	}
 
 	var nextCursor string

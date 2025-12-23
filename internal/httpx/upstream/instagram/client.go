@@ -688,11 +688,16 @@ type DMAttachments struct {
 // DMAttachment represents a message attachment
 type DMAttachment struct {
 	ID        string             `json:"id"`
+	Type      string             `json:"type,omitempty"`      // image, video, audio, share, story_mention, etc.
 	MimeType  string             `json:"mime_type,omitempty"`
 	Name      string             `json:"name,omitempty"`
 	Size      int64              `json:"size,omitempty"`
 	ImageData *DMAttachmentImage `json:"image_data,omitempty"`
 	VideoData *DMAttachmentVideo `json:"video_data,omitempty"`
+	// For shared content (reels, posts, etc.)
+	ShareURL string `json:"share_url,omitempty"`
+	// Generic payload for unknown attachment types
+	Payload map[string]interface{} `json:"payload,omitempty"`
 }
 
 // DMAttachmentImage represents image attachment data
