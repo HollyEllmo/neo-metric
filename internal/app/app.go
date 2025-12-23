@@ -829,7 +829,7 @@ func (a *instagramDirectAdapter) GetConversations(ctx context.Context, userID, a
 	}, nil
 }
 
-func (a *instagramDirectAdapter) GetMessages(ctx context.Context, conversationID, accessToken string, limit int, after string) (*directService.MessagesResult, error) {
+func (a *instagramDirectAdapter) GetMessages(ctx context.Context, conversationID, userID, accessToken string, limit int, after string) (*directService.MessagesResult, error) {
 	out, err := a.client.GetDMMessages(ctx, instagram.GetDMMessagesInput{
 		ConversationID: conversationID,
 		AccessToken:    accessToken,
@@ -842,7 +842,20 @@ func (a *instagramDirectAdapter) GetMessages(ctx context.Context, conversationID
 
 	messages := make([]directEntity.Message, len(out.Data))
 	for i, m := range out.Data {
-		timestamp, _ := time.Parse(time.RFC3339, m.CreatedTime)
+		var timestamp time.Time
+		if m.CreatedTime != "" {
+			// Instagram uses format "2024-02-06T13:41:22+0000", try multiple formats
+			for _, layout := range []string{
+				"2006-01-02T15:04:05-0700",
+				"2006-01-02T15:04:05Z0700",
+				time.RFC3339,
+			} {
+				if t, err := time.Parse(layout, m.CreatedTime); err == nil {
+					timestamp = t
+					break
+				}
+			}
+		}
 
 		msg := directEntity.Message{
 			ID:             m.ID,
@@ -853,6 +866,8 @@ func (a *instagramDirectAdapter) GetMessages(ctx context.Context, conversationID
 
 		if m.From != nil {
 			msg.SenderID = m.From.ID
+			// Check if message is from the account owner
+			msg.IsFromMe = m.From.ID == userID
 		}
 
 		// Determine message type from attachments

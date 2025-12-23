@@ -13,7 +13,7 @@ import (
 // InstagramClient defines the interface for Instagram DM API operations
 type InstagramClient interface {
 	GetConversations(ctx context.Context, userID, accessToken string, limit int, after string) (*ConversationsResult, error)
-	GetMessages(ctx context.Context, conversationID, accessToken string, limit int, after string) (*MessagesResult, error)
+	GetMessages(ctx context.Context, conversationID, userID, accessToken string, limit int, after string) (*MessagesResult, error)
 	SendMessage(ctx context.Context, userID, recipientID, accessToken, message string) (*SendMessageResult, error)
 	SendMediaMessage(ctx context.Context, userID, recipientID, accessToken, mediaURL, mediaType string) (*SendMessageResult, error)
 	GetParticipant(ctx context.Context, userID, accessToken string) (*ParticipantResult, error)
@@ -255,7 +255,7 @@ func (s *Service) GetMessages(ctx context.Context, in GetMessagesInput) (*GetMes
 		// Sync if never synced or stale
 		needsSync := syncStatus == nil || time.Since(syncStatus.LastSyncedAt) > s.syncMaxAge
 		if needsSync {
-			if err := s.syncMessagesFromInstagram(ctx, in.ConversationID, in.AccessToken); err != nil {
+			if err := s.syncMessagesFromInstagram(ctx, in.ConversationID, in.UserID, in.AccessToken); err != nil {
 				// Log error but continue with cached data if available
 				fmt.Printf("sync error (continuing with cache): %v\n", err)
 			}
@@ -277,7 +277,7 @@ func (s *Service) GetMessages(ctx context.Context, in GetMessagesInput) (*GetMes
 	}
 
 	// Fallback to direct API call
-	result, err := s.ig.GetMessages(ctx, in.ConversationID, in.AccessToken, limit, "")
+	result, err := s.ig.GetMessages(ctx, in.ConversationID, in.UserID, in.AccessToken, limit, "")
 	if err != nil {
 		return nil, fmt.Errorf("getting messages from API: %w", err)
 	}
@@ -291,7 +291,7 @@ func (s *Service) GetMessages(ctx context.Context, in GetMessagesInput) (*GetMes
 
 // syncMessagesFromInstagram syncs messages from Instagram API to local database
 // Saves each page incrementally and asynchronously
-func (s *Service) syncMessagesFromInstagram(ctx context.Context, conversationID, accessToken string) error {
+func (s *Service) syncMessagesFromInstagram(ctx context.Context, conversationID, userID, accessToken string) error {
 	cursor := ""
 	var wg sync.WaitGroup
 	errCh := make(chan error, 1)
@@ -315,7 +315,7 @@ func (s *Service) syncMessagesFromInstagram(ctx context.Context, conversationID,
 		default:
 		}
 
-		result, err := s.ig.GetMessages(ctx, conversationID, accessToken, 100, cursor)
+		result, err := s.ig.GetMessages(ctx, conversationID, userID, accessToken, 100, cursor)
 		if err != nil {
 			wg.Wait()
 			return fmt.Errorf("fetching messages: %w", err)
