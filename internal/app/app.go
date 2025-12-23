@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -75,11 +76,28 @@ type App struct {
 	directSyncScheduler *directScheduler.Scheduler
 }
 
+// parseLogLevel converts string log level to slog.Level
+func parseLogLevel(level string) slog.Level {
+	switch strings.ToLower(level) {
+	case "debug":
+		return slog.LevelDebug
+	case "info":
+		return slog.LevelInfo
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
 // NewApp creates and initializes the application
 func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
-	// Initialize logger
+	// Initialize logger with configurable level
+	logLevel := parseLogLevel(cfg.Logger.Level)
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level: logLevel,
 	}))
 
 	// Initialize router with middleware
@@ -193,6 +211,7 @@ func (a *App) initDomains(_ context.Context) error {
 	igClient := instagram.New(
 		instagram.WithBaseURL(a.cfg.Instagram.BaseURL),
 		instagram.WithAPIVersion(a.cfg.Instagram.APIVersion),
+		instagram.WithLogger(a.logger),
 	)
 	igPublisher := instagram.NewPublisher(igClient)
 

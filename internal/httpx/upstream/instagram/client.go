@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"time"
@@ -21,6 +22,7 @@ type Client struct {
 	baseURL    string
 	apiVersion string
 	httpClient *http.Client
+	logger     *slog.Logger
 }
 
 // ClientOption is a function that configures the Client
@@ -44,6 +46,13 @@ func WithAPIVersion(version string) ClientOption {
 func WithHTTPClient(httpClient *http.Client) ClientOption {
 	return func(c *Client) {
 		c.httpClient = httpClient
+	}
+}
+
+// WithLogger sets a logger for debug output
+func WithLogger(logger *slog.Logger) ClientOption {
+	return func(c *Client) {
+		c.logger = logger
 	}
 }
 
@@ -313,8 +322,27 @@ func (c *Client) GetMedia(ctx context.Context, in GetMediaInput) (*GetMediaOutpu
 
 // do executes an HTTP request and decodes the response
 func (c *Client) do(req *http.Request, out interface{}) error {
+	// Log request details at DEBUG level
+	if c.logger != nil {
+		c.logger.Debug("instagram API request",
+			"method", req.Method,
+			"url", sanitizeURL(req.URL.String()),
+		)
+	}
+
+	start := time.Now()
 	resp, err := c.httpClient.Do(req)
+	duration := time.Since(start)
+
 	if err != nil {
+		if c.logger != nil {
+			c.logger.Debug("instagram API request failed",
+				"method", req.Method,
+				"url", sanitizeURL(req.URL.String()),
+				"duration_ms", duration.Milliseconds(),
+				"error", err.Error(),
+			)
+		}
 		return fmt.Errorf("executing request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -324,11 +352,37 @@ func (c *Client) do(req *http.Request, out interface{}) error {
 		return fmt.Errorf("reading response body: %w", err)
 	}
 
+	// Log response at DEBUG level
+	if c.logger != nil {
+		c.logger.Debug("instagram API response",
+			"method", req.Method,
+			"url", sanitizeURL(req.URL.String()),
+			"status", resp.StatusCode,
+			"duration_ms", duration.Milliseconds(),
+			"body_size", len(body),
+		)
+	}
+
 	// Check for error response
 	if resp.StatusCode >= 400 {
 		var errResp ErrorResponse
 		if err := json.Unmarshal(body, &errResp); err != nil {
+			if c.logger != nil {
+				c.logger.Error("instagram API error response",
+					"status", resp.StatusCode,
+					"body", string(body),
+				)
+			}
 			return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+		}
+		if c.logger != nil {
+			c.logger.Error("instagram API error",
+				"code", errResp.Error.Code,
+				"subcode", errResp.Error.ErrorSubcode,
+				"message", errResp.Error.Message,
+				"type", errResp.Error.Type,
+				"trace_id", errResp.Error.FBTraceID,
+			)
 		}
 		return &errResp.Error
 	}
@@ -340,6 +394,20 @@ func (c *Client) do(req *http.Request, out interface{}) error {
 	}
 
 	return nil
+}
+
+// sanitizeURL removes access_token from URL for logging
+func sanitizeURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	q := u.Query()
+	if q.Has("access_token") {
+		q.Set("access_token", "[REDACTED]")
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 func joinStrings(strs []string, sep string) string {

@@ -11,10 +11,16 @@ import (
 // Config holds all application configuration
 type Config struct {
 	Server    Server    `yaml:"server"`
+	Logger    Logger    `yaml:"logger"`
 	Instagram Instagram `yaml:"instagram"`
 	Database  Database  `yaml:"database"`
 	Scheduler Scheduler `yaml:"scheduler"`
 	S3        S3        `yaml:"s3"`
+}
+
+// Logger holds logging configuration
+type Logger struct {
+	Level string `yaml:"level" env:"LOG_LEVEL" env-default:"info"`
 }
 
 // S3 holds S3/MinIO storage configuration
