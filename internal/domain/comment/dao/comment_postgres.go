@@ -415,6 +415,7 @@ func (r *SyncStatusPostgres) UpdateSyncStatus(ctx context.Context, status *SyncS
 }
 
 // GetMediaIDsNeedingSync retrieves media IDs that need synchronization
+// Note: Stories are excluded because Instagram API doesn't support comments endpoint for them
 func (r *SyncStatusPostgres) GetMediaIDsNeedingSync(ctx context.Context, olderThan time.Duration, limit int) ([]string, error) {
 	query := `
 		SELECT p.instagram_media_id
@@ -422,6 +423,7 @@ func (r *SyncStatusPostgres) GetMediaIDsNeedingSync(ctx context.Context, olderTh
 		LEFT JOIN comment_sync_status css ON p.instagram_media_id = css.instagram_media_id
 		WHERE p.instagram_media_id IS NOT NULL
 		  AND p.status = 'published'
+		  AND p.type != 'story'
 		  AND (css.last_synced_at IS NULL OR css.last_synced_at < $1)
 		ORDER BY COALESCE(css.last_synced_at, '1970-01-01'::timestamp) ASC
 		LIMIT $2
