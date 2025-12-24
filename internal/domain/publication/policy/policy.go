@@ -58,6 +58,7 @@ type CreatePublicationInput struct {
 	Caption     string
 	Media       []MediaInput
 	ScheduledAt *time.Time
+	PublishNow  bool // If true, publish immediately after creation
 }
 
 // MediaInput represents input for a media item
@@ -98,6 +99,14 @@ func (p *Policy) CreatePublication(ctx context.Context, in CreatePublicationInpu
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// If publish_now is set, publish immediately
+	if in.PublishNow {
+		pub, err = p.PublishNow(ctx, pub.ID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &CreatePublicationOutput{Publication: pub}, nil

@@ -60,6 +60,7 @@ type CreateRequest struct {
 	Caption     string              `json:"caption"`
 	Media       []MediaRequest      `json:"media"`
 	ScheduledAt *string             `json:"scheduled_at,omitempty"` // RFC3339 format
+	PublishNow  bool                `json:"publish_now,omitempty"`  // Publish immediately after creation
 }
 
 // MediaRequest represents a media item in requests
@@ -95,6 +96,12 @@ func (h *PublicationHandler) Create() http.HandlerFunc {
 			return
 		}
 
+		// Validate that publish_now and scheduled_at are mutually exclusive
+		if req.PublishNow && req.ScheduledAt != nil && *req.ScheduledAt != "" {
+			response.BadRequest(w, "publish_now and scheduled_at cannot be used together")
+			return
+		}
+
 		// Parse scheduled time
 		var scheduledAt *time.Time
 		if req.ScheduledAt != nil && *req.ScheduledAt != "" {
@@ -127,6 +134,7 @@ func (h *PublicationHandler) Create() http.HandlerFunc {
 			Caption:     req.Caption,
 			Media:       mediaInput,
 			ScheduledAt: scheduledAt,
+			PublishNow:  req.PublishNow,
 		})
 		if err != nil {
 			handleDomainError(w, err)

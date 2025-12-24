@@ -1787,6 +1787,13 @@ components:
           nullable: true
           description: Время публикации (если не указано - создаётся черновик)
           example: "2025-12-25T10:00:00Z"
+        publish_now:
+          type: boolean
+          default: false
+          description: |
+            Если true - публикация будет сразу опубликована в Instagram.
+            Нельзя использовать вместе с scheduled_at.
+          example: false
 
     UpdatePublicationRequest:
       type: object
