@@ -2,6 +2,7 @@ package dao
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -24,9 +25,18 @@ func NewPublicationPostgres(pool *pgxpool.Pool) *PublicationPostgres {
 // Create inserts a new publication
 func (r *PublicationPostgres) Create(ctx context.Context, pub *entity.Publication) error {
 	query := `
-		INSERT INTO publications (id, account_id, type, status, caption, scheduled_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO publications (id, account_id, type, status, caption, reel_options, scheduled_at, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
+
+	var reelOptionsJSON []byte
+	if pub.ReelOptions != nil {
+		var err error
+		reelOptionsJSON, err = json.Marshal(pub.ReelOptions)
+		if err != nil {
+			return fmt.Errorf("marshaling reel_options: %w", err)
+		}
+	}
 
 	_, err := r.pool.Exec(ctx, query,
 		pub.ID,
@@ -34,6 +44,7 @@ func (r *PublicationPostgres) Create(ctx context.Context, pub *entity.Publicatio
 		pub.Type,
 		pub.Status,
 		pub.Caption,
+		reelOptionsJSON,
 		pub.ScheduledAt,
 		pub.CreatedAt,
 		pub.UpdatedAt,
@@ -48,7 +59,7 @@ func (r *PublicationPostgres) Create(ctx context.Context, pub *entity.Publicatio
 // GetByID retrieves a publication by ID
 func (r *PublicationPostgres) GetByID(ctx context.Context, id string) (*entity.Publication, error) {
 	query := `
-		SELECT id, account_id, instagram_media_id, type, status, caption,
+		SELECT id, account_id, instagram_media_id, type, status, caption, reel_options,
 		       scheduled_at, published_at, error_message, created_at, updated_at
 		FROM publications
 		WHERE id = $1
@@ -58,6 +69,7 @@ func (r *PublicationPostgres) GetByID(ctx context.Context, id string) (*entity.P
 
 	var pub entity.Publication
 	var instagramMediaID, errorMessage *string
+	var reelOptionsJSON []byte
 	var scheduledAt, publishedAt *time.Time
 
 	err := row.Scan(
@@ -67,6 +79,7 @@ func (r *PublicationPostgres) GetByID(ctx context.Context, id string) (*entity.P
 		&pub.Type,
 		&pub.Status,
 		&pub.Caption,
+		&reelOptionsJSON,
 		&scheduledAt,
 		&publishedAt,
 		&errorMessage,
@@ -85,6 +98,12 @@ func (r *PublicationPostgres) GetByID(ctx context.Context, id string) (*entity.P
 	}
 	if errorMessage != nil {
 		pub.ErrorMessage = *errorMessage
+	}
+	if len(reelOptionsJSON) > 0 {
+		pub.ReelOptions = &entity.ReelOptions{}
+		if err := json.Unmarshal(reelOptionsJSON, pub.ReelOptions); err != nil {
+			return nil, fmt.Errorf("unmarshaling reel_options: %w", err)
+		}
 	}
 	pub.ScheduledAt = scheduledAt
 	pub.PublishedAt = publishedAt
@@ -126,7 +145,7 @@ func (r *PublicationPostgres) Delete(ctx context.Context, id string) error {
 // List retrieves publications with filtering
 func (r *PublicationPostgres) List(ctx context.Context, filter PublicationFilter, opts ListOptions) ([]entity.Publication, error) {
 	query := `
-		SELECT id, account_id, instagram_media_id, type, status, caption,
+		SELECT id, account_id, instagram_media_id, type, status, caption, reel_options,
 		       scheduled_at, published_at, error_message, created_at, updated_at
 		FROM publications
 		WHERE 1=1
@@ -193,6 +212,7 @@ func (r *PublicationPostgres) List(ctx context.Context, filter PublicationFilter
 	for rows.Next() {
 		var pub entity.Publication
 		var instagramMediaID, errorMessage *string
+		var reelOptionsJSON []byte
 		var scheduledAt, publishedAt *time.Time
 
 		err := rows.Scan(
@@ -202,6 +222,7 @@ func (r *PublicationPostgres) List(ctx context.Context, filter PublicationFilter
 			&pub.Type,
 			&pub.Status,
 			&pub.Caption,
+			&reelOptionsJSON,
 			&scheduledAt,
 			&publishedAt,
 			&errorMessage,
@@ -217,6 +238,10 @@ func (r *PublicationPostgres) List(ctx context.Context, filter PublicationFilter
 		}
 		if errorMessage != nil {
 			pub.ErrorMessage = *errorMessage
+		}
+		if len(reelOptionsJSON) > 0 {
+			pub.ReelOptions = &entity.ReelOptions{}
+			_ = json.Unmarshal(reelOptionsJSON, pub.ReelOptions)
 		}
 		pub.ScheduledAt = scheduledAt
 		pub.PublishedAt = publishedAt
@@ -263,7 +288,7 @@ func (r *PublicationPostgres) Count(ctx context.Context, filter PublicationFilte
 // GetScheduledForPublishing retrieves publications due for publishing
 func (r *PublicationPostgres) GetScheduledForPublishing(ctx context.Context, now time.Time) ([]entity.Publication, error) {
 	query := `
-		SELECT id, account_id, instagram_media_id, type, status, caption,
+		SELECT id, account_id, instagram_media_id, type, status, caption, reel_options,
 		       scheduled_at, published_at, error_message, created_at, updated_at
 		FROM publications
 		WHERE status = 'scheduled' AND scheduled_at <= $1
@@ -280,6 +305,7 @@ func (r *PublicationPostgres) GetScheduledForPublishing(ctx context.Context, now
 	for rows.Next() {
 		var pub entity.Publication
 		var instagramMediaID, errorMessage *string
+		var reelOptionsJSON []byte
 		var scheduledAt, publishedAt *time.Time
 
 		err := rows.Scan(
@@ -289,6 +315,7 @@ func (r *PublicationPostgres) GetScheduledForPublishing(ctx context.Context, now
 			&pub.Type,
 			&pub.Status,
 			&pub.Caption,
+			&reelOptionsJSON,
 			&scheduledAt,
 			&publishedAt,
 			&errorMessage,
@@ -304,6 +331,10 @@ func (r *PublicationPostgres) GetScheduledForPublishing(ctx context.Context, now
 		}
 		if errorMessage != nil {
 			pub.ErrorMessage = *errorMessage
+		}
+		if len(reelOptionsJSON) > 0 {
+			pub.ReelOptions = &entity.ReelOptions{}
+			_ = json.Unmarshal(reelOptionsJSON, pub.ReelOptions)
 		}
 		pub.ScheduledAt = scheduledAt
 		pub.PublishedAt = publishedAt
