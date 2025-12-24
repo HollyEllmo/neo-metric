@@ -46,7 +46,6 @@ type MessageRepository interface {
 type ConversationSyncRepository interface {
 	GetSyncStatus(ctx context.Context, conversationID string) (*ConversationSyncStatus, error)
 	UpdateSyncStatus(ctx context.Context, status *ConversationSyncStatus) error
-	DeleteSyncStatus(ctx context.Context, conversationID string) error
 	GetConversationsNeedingSync(ctx context.Context, accountID string, olderThan time.Duration, limit int) ([]string, error)
 }
 
@@ -580,11 +579,6 @@ func (s *Service) GetAccountsNeedingSync(ctx context.Context, olderThan time.Dur
 func (s *Service) SyncMessages(ctx context.Context, conversationID, userID, accessToken string) error {
 	if s.msgRepo == nil {
 		return fmt.Errorf("repository required for sync")
-	}
-
-	// Clear existing sync status to force full resync
-	if s.convSyncRepo != nil {
-		_ = s.convSyncRepo.DeleteSyncStatus(ctx, conversationID)
 	}
 
 	return s.syncMessagesFromInstagram(ctx, conversationID, userID, accessToken)

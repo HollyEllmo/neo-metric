@@ -101,16 +101,6 @@ func (r *ConversationSyncPostgres) UpdateSyncStatus(ctx context.Context, status 
 	return nil
 }
 
-// DeleteSyncStatus removes sync status for a conversation
-func (r *ConversationSyncPostgres) DeleteSyncStatus(ctx context.Context, conversationID string) error {
-	query := `DELETE FROM dm_conversation_sync_status WHERE conversation_id = $1`
-	_, err := r.pool.Exec(ctx, query, conversationID)
-	if err != nil {
-		return fmt.Errorf("deleting conversation sync status: %w", err)
-	}
-	return nil
-}
-
 // AccountSyncPostgres implements account sync status repository
 type AccountSyncPostgres struct {
 	pool *pgxpool.Pool
