@@ -147,9 +147,10 @@ func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
 				&publicationRepoAdapter{app.publicationRepo},
 				&accountProviderAdapter{dao.NewAccountPostgres(app.pg)},
 				commentScheduler.Config{
-					Interval:  cfg.Scheduler.CommentSyncInterval,
-					SyncAge:   cfg.Scheduler.CommentSyncAge,
-					BatchSize: cfg.Scheduler.CommentSyncBatchSize,
+					Interval:   cfg.Scheduler.CommentSyncInterval,
+					SyncAge:    cfg.Scheduler.CommentSyncAge,
+					BatchSize:  cfg.Scheduler.CommentSyncBatchSize,
+					MaxRetries: cfg.Scheduler.CommentSyncMaxRetries,
 				},
 				logger,
 			)
@@ -161,9 +162,10 @@ func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
 				app.directService,
 				&accountProviderAdapter{dao.NewAccountPostgres(app.pg)},
 				directScheduler.Config{
-					Interval:  cfg.Scheduler.DirectSyncInterval,
-					SyncAge:   cfg.Scheduler.DirectSyncAge,
-					BatchSize: cfg.Scheduler.DirectSyncBatchSize,
+					Interval:   cfg.Scheduler.DirectSyncInterval,
+					SyncAge:    cfg.Scheduler.DirectSyncAge,
+					BatchSize:  cfg.Scheduler.DirectSyncBatchSize,
+					MaxRetries: cfg.Scheduler.DirectSyncMaxRetries,
 				},
 				logger,
 			)
@@ -770,6 +772,14 @@ func (a *commentSyncRepoAdapter) GetMediaIDsNeedingSync(ctx context.Context, old
 	return a.repo.GetMediaIDsNeedingSync(ctx, olderThan, limit)
 }
 
+func (a *commentSyncRepoAdapter) IncrementRetryCount(ctx context.Context, mediaID string, lastError string, maxRetries int) error {
+	return a.repo.IncrementRetryCount(ctx, mediaID, lastError, maxRetries)
+}
+
+func (a *commentSyncRepoAdapter) ResetRetryCount(ctx context.Context, mediaID string) error {
+	return a.repo.ResetRetryCount(ctx, mediaID)
+}
+
 // publicationRepoAdapter adapts dao.PublicationRepository for comment sync scheduler
 type publicationRepoAdapter struct {
 	repo dao.PublicationRepository
@@ -1104,6 +1114,14 @@ func (a *directConvSyncRepoAdapter) GetConversationsNeedingSync(ctx context.Cont
 	return a.repo.GetConversationsNeedingSync(ctx, accountID, olderThan, limit)
 }
 
+func (a *directConvSyncRepoAdapter) IncrementRetryCount(ctx context.Context, conversationID string, lastError string, maxRetries int) error {
+	return a.repo.IncrementRetryCount(ctx, conversationID, lastError, maxRetries)
+}
+
+func (a *directConvSyncRepoAdapter) ResetRetryCount(ctx context.Context, conversationID string) error {
+	return a.repo.ResetRetryCount(ctx, conversationID)
+}
+
 // directAccountSyncRepoAdapter adapts directDao.AccountSyncPostgres to directService.AccountSyncRepository
 type directAccountSyncRepoAdapter struct {
 	repo *directDao.AccountSyncPostgres
@@ -1136,6 +1154,14 @@ func (a *directAccountSyncRepoAdapter) UpdateSyncStatus(ctx context.Context, sta
 
 func (a *directAccountSyncRepoAdapter) GetAccountsNeedingSync(ctx context.Context, olderThan time.Duration, limit int) ([]string, error) {
 	return a.repo.GetAccountsNeedingSync(ctx, olderThan, limit)
+}
+
+func (a *directAccountSyncRepoAdapter) IncrementRetryCount(ctx context.Context, accountID string, lastError string, maxRetries int) error {
+	return a.repo.IncrementRetryCount(ctx, accountID, lastError, maxRetries)
+}
+
+func (a *directAccountSyncRepoAdapter) ResetRetryCount(ctx context.Context, accountID string) error {
+	return a.repo.ResetRetryCount(ctx, accountID)
 }
 
 // templateRepoAdapter adapts templateDao.TemplatePostgres to templateService.TemplateRepository

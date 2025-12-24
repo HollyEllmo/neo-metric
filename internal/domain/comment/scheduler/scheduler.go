@@ -11,6 +11,8 @@ import (
 type CommentSyncer interface {
 	SyncMediaComments(ctx context.Context, mediaID, accessToken string) error
 	GetMediaIDsNeedingSync(ctx context.Context, olderThan time.Duration, limit int) ([]string, error)
+	IncrementSyncRetryCount(ctx context.Context, mediaID string, lastError string, maxRetries int) error
+	ResetSyncRetryCount(ctx context.Context, mediaID string) error
 }
 
 // PublicationAccountProvider provides account info for a publication
@@ -31,6 +33,7 @@ type Scheduler struct {
 	interval        time.Duration
 	syncAge         time.Duration // How old sync status can be before refreshing
 	batchSize       int           // How many media to sync per run
+	maxRetries      int           // Max retries before marking sync as permanently failed
 	logger          *slog.Logger
 	stopCh          chan struct{}
 	cancel          context.CancelFunc // Cancel function to stop in-flight operations
@@ -41,9 +44,10 @@ type Scheduler struct {
 
 // Config holds configuration for comment sync scheduler
 type Config struct {
-	Interval  time.Duration
-	SyncAge   time.Duration
-	BatchSize int
+	Interval   time.Duration
+	SyncAge    time.Duration
+	BatchSize  int
+	MaxRetries int
 }
 
 // New creates a new comment sync scheduler
@@ -63,6 +67,9 @@ func New(
 	if cfg.BatchSize == 0 {
 		cfg.BatchSize = 10
 	}
+	if cfg.MaxRetries == 0 {
+		cfg.MaxRetries = 5
+	}
 
 	return &Scheduler{
 		syncer:          syncer,
@@ -71,6 +78,7 @@ func New(
 		interval:        cfg.Interval,
 		syncAge:         cfg.SyncAge,
 		batchSize:       cfg.BatchSize,
+		maxRetries:      cfg.MaxRetries,
 		logger:          logger,
 		stopCh:          make(chan struct{}),
 	}
@@ -183,15 +191,28 @@ func (s *Scheduler) syncMedia(ctx context.Context, mediaID string) error {
 	// Get account ID for this media
 	accountID, err := s.pubProvider.GetAccountIDByMediaID(ctx, mediaID)
 	if err != nil {
+		// Increment retry count on error
+		_ = s.syncer.IncrementSyncRetryCount(ctx, mediaID, err.Error(), s.maxRetries)
 		return err
 	}
 
 	// Get access token for the account
 	accessToken, err := s.accountProvider.GetAccessToken(ctx, accountID)
 	if err != nil {
+		// Increment retry count on error
+		_ = s.syncer.IncrementSyncRetryCount(ctx, mediaID, err.Error(), s.maxRetries)
 		return err
 	}
 
 	// Sync comments
-	return s.syncer.SyncMediaComments(ctx, mediaID, accessToken)
+	err = s.syncer.SyncMediaComments(ctx, mediaID, accessToken)
+	if err != nil {
+		// Increment retry count on error
+		_ = s.syncer.IncrementSyncRetryCount(ctx, mediaID, err.Error(), s.maxRetries)
+		return err
+	}
+
+	// Reset retry count on success
+	_ = s.syncer.ResetSyncRetryCount(ctx, mediaID)
+	return nil
 }

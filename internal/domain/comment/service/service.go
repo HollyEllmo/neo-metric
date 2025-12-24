@@ -38,6 +38,9 @@ type SyncStatus struct {
 	LastSyncedAt     time.Time
 	NextCursor       string
 	SyncComplete     bool
+	RetryCount       int
+	Failed           bool
+	LastError        string
 }
 
 // SyncStatusRepository defines the interface for sync status tracking
@@ -45,6 +48,8 @@ type SyncStatusRepository interface {
 	GetSyncStatus(ctx context.Context, mediaID string) (*SyncStatus, error)
 	UpdateSyncStatus(ctx context.Context, status *SyncStatus) error
 	GetMediaIDsNeedingSync(ctx context.Context, olderThan time.Duration, limit int) ([]string, error)
+	IncrementRetryCount(ctx context.Context, mediaID string, lastError string, maxRetries int) error
+	ResetRetryCount(ctx context.Context, mediaID string) error
 }
 
 // CommentsResult represents the result of fetching comments
@@ -458,4 +463,20 @@ func (s *Service) GetComment(ctx context.Context, commentID string) (*entity.Com
 		return nil, nil
 	}
 	return s.repo.GetByID(ctx, commentID)
+}
+
+// IncrementSyncRetryCount increments the retry count for a media sync
+func (s *Service) IncrementSyncRetryCount(ctx context.Context, mediaID string, lastError string, maxRetries int) error {
+	if s.syncRepo == nil {
+		return nil
+	}
+	return s.syncRepo.IncrementRetryCount(ctx, mediaID, lastError, maxRetries)
+}
+
+// ResetSyncRetryCount resets the retry count after a successful sync
+func (s *Service) ResetSyncRetryCount(ctx context.Context, mediaID string) error {
+	if s.syncRepo == nil {
+		return nil
+	}
+	return s.syncRepo.ResetRetryCount(ctx, mediaID)
 }

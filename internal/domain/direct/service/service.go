@@ -47,6 +47,8 @@ type ConversationSyncRepository interface {
 	GetSyncStatus(ctx context.Context, conversationID string) (*ConversationSyncStatus, error)
 	UpdateSyncStatus(ctx context.Context, status *ConversationSyncStatus) error
 	GetConversationsNeedingSync(ctx context.Context, accountID string, olderThan time.Duration, limit int) ([]string, error)
+	IncrementRetryCount(ctx context.Context, conversationID string, lastError string, maxRetries int) error
+	ResetRetryCount(ctx context.Context, conversationID string) error
 }
 
 // AccountSyncRepository defines sync status tracking for accounts
@@ -54,6 +56,8 @@ type AccountSyncRepository interface {
 	GetSyncStatus(ctx context.Context, accountID string) (*AccountSyncStatus, error)
 	UpdateSyncStatus(ctx context.Context, status *AccountSyncStatus) error
 	GetAccountsNeedingSync(ctx context.Context, olderThan time.Duration, limit int) ([]string, error)
+	IncrementRetryCount(ctx context.Context, accountID string, lastError string, maxRetries int) error
+	ResetRetryCount(ctx context.Context, accountID string) error
 }
 
 // ConversationsResult from Instagram API
@@ -91,6 +95,9 @@ type ConversationSyncStatus struct {
 	NextCursor             string
 	SyncComplete           bool
 	OldestMessageTimestamp *time.Time
+	RetryCount             int
+	Failed                 bool
+	LastError              string
 }
 
 // AccountSyncStatus tracks sync state per account
@@ -99,6 +106,9 @@ type AccountSyncStatus struct {
 	LastSyncedAt time.Time
 	NextCursor   string
 	SyncComplete bool
+	RetryCount   int
+	Failed       bool
+	LastError    string
 }
 
 // Service handles DM business logic
@@ -622,4 +632,36 @@ func (s *Service) GetHeatmap(ctx context.Context, in GetHeatmapInput) (*entity.H
 		StartDate: in.StartDate,
 		EndDate:   in.EndDate,
 	})
+}
+
+// IncrementAccountSyncRetryCount increments the retry count for account sync
+func (s *Service) IncrementAccountSyncRetryCount(ctx context.Context, accountID string, lastError string, maxRetries int) error {
+	if s.accountSyncRepo == nil {
+		return nil
+	}
+	return s.accountSyncRepo.IncrementRetryCount(ctx, accountID, lastError, maxRetries)
+}
+
+// ResetAccountSyncRetryCount resets the retry count after a successful account sync
+func (s *Service) ResetAccountSyncRetryCount(ctx context.Context, accountID string) error {
+	if s.accountSyncRepo == nil {
+		return nil
+	}
+	return s.accountSyncRepo.ResetRetryCount(ctx, accountID)
+}
+
+// IncrementConversationSyncRetryCount increments the retry count for conversation sync
+func (s *Service) IncrementConversationSyncRetryCount(ctx context.Context, conversationID string, lastError string, maxRetries int) error {
+	if s.convSyncRepo == nil {
+		return nil
+	}
+	return s.convSyncRepo.IncrementRetryCount(ctx, conversationID, lastError, maxRetries)
+}
+
+// ResetConversationSyncRetryCount resets the retry count after a successful conversation sync
+func (s *Service) ResetConversationSyncRetryCount(ctx context.Context, conversationID string) error {
+	if s.convSyncRepo == nil {
+		return nil
+	}
+	return s.convSyncRepo.ResetRetryCount(ctx, conversationID)
 }

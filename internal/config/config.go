@@ -70,15 +70,17 @@ type Scheduler struct {
 	Interval time.Duration `yaml:"interval" env:"SCHEDULER_INTERVAL" env-default:"1m"`
 
 	// Comment sync settings
-	CommentSyncInterval  time.Duration `yaml:"comment_sync_interval" env:"COMMENT_SYNC_INTERVAL" env-default:"5m"`
-	CommentSyncAge       time.Duration `yaml:"comment_sync_age" env:"COMMENT_SYNC_AGE" env-default:"10m"`
-	CommentSyncBatchSize int           `yaml:"comment_sync_batch_size" env:"COMMENT_SYNC_BATCH_SIZE" env-default:"10"`
-	CommentCacheMaxAge   time.Duration `yaml:"comment_cache_max_age" env:"COMMENT_CACHE_MAX_AGE" env-default:"5m"` // How old cache can be before API refresh
+	CommentSyncInterval   time.Duration `yaml:"comment_sync_interval" env:"COMMENT_SYNC_INTERVAL" env-default:"5m"`
+	CommentSyncAge        time.Duration `yaml:"comment_sync_age" env:"COMMENT_SYNC_AGE" env-default:"10m"`
+	CommentSyncBatchSize  int           `yaml:"comment_sync_batch_size" env:"COMMENT_SYNC_BATCH_SIZE" env-default:"10"`
+	CommentSyncMaxRetries int           `yaml:"comment_sync_max_retries" env:"COMMENT_SYNC_MAX_RETRIES" env-default:"5"`
+	CommentCacheMaxAge    time.Duration `yaml:"comment_cache_max_age" env:"COMMENT_CACHE_MAX_AGE" env-default:"5m"` // How old cache can be before API refresh
 
 	// Direct message sync settings
-	DirectSyncInterval  time.Duration `yaml:"direct_sync_interval" env:"DIRECT_SYNC_INTERVAL" env-default:"10m"`
-	DirectSyncAge       time.Duration `yaml:"direct_sync_age" env:"DIRECT_SYNC_AGE" env-default:"30m"`
-	DirectSyncBatchSize int           `yaml:"direct_sync_batch_size" env:"DIRECT_SYNC_BATCH_SIZE" env-default:"5"`
+	DirectSyncInterval   time.Duration `yaml:"direct_sync_interval" env:"DIRECT_SYNC_INTERVAL" env-default:"10m"`
+	DirectSyncAge        time.Duration `yaml:"direct_sync_age" env:"DIRECT_SYNC_AGE" env-default:"30m"`
+	DirectSyncBatchSize  int           `yaml:"direct_sync_batch_size" env:"DIRECT_SYNC_BATCH_SIZE" env-default:"5"`
+	DirectSyncMaxRetries int           `yaml:"direct_sync_max_retries" env:"DIRECT_SYNC_MAX_RETRIES" env-default:"5"`
 }
 
 // MustLoad loads configuration from environment and panics on error

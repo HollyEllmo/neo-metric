@@ -43,6 +43,10 @@ type SyncStatusRepository interface {
 	UpdateSyncStatus(ctx context.Context, status *SyncStatus) error
 	// GetMediaIDsNeedingSync retrieves media IDs that need synchronization
 	GetMediaIDsNeedingSync(ctx context.Context, olderThan time.Duration, limit int) ([]string, error)
+	// IncrementRetryCount increments the retry count and optionally marks as failed
+	IncrementRetryCount(ctx context.Context, mediaID string, lastError string, maxRetries int) error
+	// ResetRetryCount resets the retry count after a successful sync
+	ResetRetryCount(ctx context.Context, mediaID string) error
 }
 
 // SyncStatus represents the synchronization status for a media's comments
@@ -51,6 +55,9 @@ type SyncStatus struct {
 	LastSyncedAt     time.Time
 	NextCursor       string
 	SyncComplete     bool
+	RetryCount       int
+	Failed           bool
+	LastError        string
 }
 
 // CommentPostgres implements CommentRepository for PostgreSQL
@@ -355,7 +362,8 @@ func NewSyncStatusPostgres(pool *pgxpool.Pool) *SyncStatusPostgres {
 // GetSyncStatus retrieves sync status for a media
 func (r *SyncStatusPostgres) GetSyncStatus(ctx context.Context, mediaID string) (*SyncStatus, error) {
 	query := `
-		SELECT instagram_media_id, last_synced_at, next_cursor, sync_complete
+		SELECT instagram_media_id, last_synced_at, next_cursor, sync_complete,
+		       COALESCE(retry_count, 0), COALESCE(failed, false), COALESCE(last_error, '')
 		FROM comment_sync_status
 		WHERE instagram_media_id = $1
 	`
@@ -370,6 +378,9 @@ func (r *SyncStatusPostgres) GetSyncStatus(ctx context.Context, mediaID string) 
 		&status.LastSyncedAt,
 		&nextCursor,
 		&status.SyncComplete,
+		&status.RetryCount,
+		&status.Failed,
+		&status.LastError,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -416,6 +427,7 @@ func (r *SyncStatusPostgres) UpdateSyncStatus(ctx context.Context, status *SyncS
 
 // GetMediaIDsNeedingSync retrieves media IDs that need synchronization
 // Note: Stories are excluded because Instagram API doesn't support comments endpoint for them
+// Media marked as failed are excluded from sync
 func (r *SyncStatusPostgres) GetMediaIDsNeedingSync(ctx context.Context, olderThan time.Duration, limit int) ([]string, error) {
 	query := `
 		SELECT p.instagram_media_id
@@ -424,6 +436,7 @@ func (r *SyncStatusPostgres) GetMediaIDsNeedingSync(ctx context.Context, olderTh
 		WHERE p.instagram_media_id IS NOT NULL
 		  AND p.status = 'published'
 		  AND p.type != 'story'
+		  AND (css.failed IS NULL OR css.failed = false)
 		  AND (css.last_synced_at IS NULL OR css.last_synced_at < $1)
 		ORDER BY COALESCE(css.last_synced_at, '1970-01-01'::timestamp) ASC
 		LIMIT $2
@@ -446,6 +459,42 @@ func (r *SyncStatusPostgres) GetMediaIDsNeedingSync(ctx context.Context, olderTh
 	}
 
 	return mediaIDs, nil
+}
+
+// IncrementRetryCount increments the retry count and marks as failed if max retries exceeded
+func (r *SyncStatusPostgres) IncrementRetryCount(ctx context.Context, mediaID string, lastError string, maxRetries int) error {
+	query := `
+		INSERT INTO comment_sync_status (instagram_media_id, last_synced_at, retry_count, last_error, failed)
+		VALUES ($1, NOW(), 1, $2, 1 >= $3)
+		ON CONFLICT (instagram_media_id) DO UPDATE SET
+			retry_count = comment_sync_status.retry_count + 1,
+			last_error = EXCLUDED.last_error,
+			failed = (comment_sync_status.retry_count + 1) >= $3,
+			last_synced_at = NOW()
+	`
+
+	_, err := r.pool.Exec(ctx, query, mediaID, lastError, maxRetries)
+	if err != nil {
+		return fmt.Errorf("incrementing retry count: %w", err)
+	}
+
+	return nil
+}
+
+// ResetRetryCount resets the retry count after a successful sync
+func (r *SyncStatusPostgres) ResetRetryCount(ctx context.Context, mediaID string) error {
+	query := `
+		UPDATE comment_sync_status
+		SET retry_count = 0, failed = false, last_error = NULL
+		WHERE instagram_media_id = $1
+	`
+
+	_, err := r.pool.Exec(ctx, query, mediaID)
+	if err != nil {
+		return fmt.Errorf("resetting retry count: %w", err)
+	}
+
+	return nil
 }
 
 // GetStatistics retrieves aggregated comment statistics for an account

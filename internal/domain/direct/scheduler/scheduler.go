@@ -11,6 +11,8 @@ import (
 type DirectSyncer interface {
 	SyncConversations(ctx context.Context, accountID, userID, accessToken string) error
 	GetAccountsNeedingSync(ctx context.Context, olderThan time.Duration, limit int) ([]string, error)
+	IncrementAccountSyncRetryCount(ctx context.Context, accountID string, lastError string, maxRetries int) error
+	ResetAccountSyncRetryCount(ctx context.Context, accountID string) error
 }
 
 // AccountProvider provides access token and user ID for an account
@@ -26,6 +28,7 @@ type Scheduler struct {
 	interval        time.Duration
 	syncAge         time.Duration // How old sync status can be before refreshing
 	batchSize       int           // How many accounts to sync per run
+	maxRetries      int           // Max retries before marking sync as permanently failed
 	logger          *slog.Logger
 	stopCh          chan struct{}
 	cancel          context.CancelFunc // Cancel function to stop in-flight operations
@@ -36,9 +39,10 @@ type Scheduler struct {
 
 // Config holds configuration for direct sync scheduler
 type Config struct {
-	Interval  time.Duration
-	SyncAge   time.Duration
-	BatchSize int
+	Interval   time.Duration
+	SyncAge    time.Duration
+	BatchSize  int
+	MaxRetries int
 }
 
 // New creates a new direct sync scheduler
@@ -57,6 +61,9 @@ func New(
 	if cfg.BatchSize == 0 {
 		cfg.BatchSize = 5
 	}
+	if cfg.MaxRetries == 0 {
+		cfg.MaxRetries = 5
+	}
 
 	return &Scheduler{
 		syncer:          syncer,
@@ -64,6 +71,7 @@ func New(
 		interval:        cfg.Interval,
 		syncAge:         cfg.SyncAge,
 		batchSize:       cfg.BatchSize,
+		maxRetries:      cfg.MaxRetries,
 		logger:          logger,
 		stopCh:          make(chan struct{}),
 	}
@@ -176,15 +184,28 @@ func (s *Scheduler) syncAccount(ctx context.Context, accountID string) error {
 	// Get access token for the account
 	accessToken, err := s.accountProvider.GetAccessToken(ctx, accountID)
 	if err != nil {
+		// Increment retry count on error
+		_ = s.syncer.IncrementAccountSyncRetryCount(ctx, accountID, err.Error(), s.maxRetries)
 		return err
 	}
 
 	// Get Instagram user ID
 	userID, err := s.accountProvider.GetInstagramUserID(ctx, accountID)
 	if err != nil {
+		// Increment retry count on error
+		_ = s.syncer.IncrementAccountSyncRetryCount(ctx, accountID, err.Error(), s.maxRetries)
 		return err
 	}
 
 	// Sync conversations
-	return s.syncer.SyncConversations(ctx, accountID, userID, accessToken)
+	err = s.syncer.SyncConversations(ctx, accountID, userID, accessToken)
+	if err != nil {
+		// Increment retry count on error
+		_ = s.syncer.IncrementAccountSyncRetryCount(ctx, accountID, err.Error(), s.maxRetries)
+		return err
+	}
+
+	// Reset retry count on success
+	_ = s.syncer.ResetAccountSyncRetryCount(ctx, accountID)
+	return nil
 }

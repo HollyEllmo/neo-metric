@@ -16,6 +16,9 @@ type ConversationSyncStatus struct {
 	NextCursor             string
 	SyncComplete           bool
 	OldestMessageTimestamp *time.Time
+	RetryCount             int
+	Failed                 bool
+	LastError              string
 }
 
 // AccountSyncStatus represents sync status for an account's conversations list
@@ -24,6 +27,9 @@ type AccountSyncStatus struct {
 	LastSyncedAt time.Time
 	NextCursor   string
 	SyncComplete bool
+	RetryCount   int
+	Failed       bool
+	LastError    string
 }
 
 // ConversationSyncPostgres implements conversation sync status repository
@@ -39,7 +45,8 @@ func NewConversationSyncPostgres(pool *pgxpool.Pool) *ConversationSyncPostgres {
 // GetSyncStatus retrieves sync status for a conversation
 func (r *ConversationSyncPostgres) GetSyncStatus(ctx context.Context, conversationID string) (*ConversationSyncStatus, error) {
 	query := `
-		SELECT conversation_id, last_synced_at, next_cursor, sync_complete, oldest_message_timestamp
+		SELECT conversation_id, last_synced_at, next_cursor, sync_complete, oldest_message_timestamp,
+		       COALESCE(retry_count, 0), COALESCE(failed, false), COALESCE(last_error, '')
 		FROM dm_conversation_sync_status
 		WHERE conversation_id = $1
 	`
@@ -54,6 +61,9 @@ func (r *ConversationSyncPostgres) GetSyncStatus(ctx context.Context, conversati
 		&nextCursor,
 		&status.SyncComplete,
 		&oldestTimestamp,
+		&status.RetryCount,
+		&status.Failed,
+		&status.LastError,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -114,7 +124,8 @@ func NewAccountSyncPostgres(pool *pgxpool.Pool) *AccountSyncPostgres {
 // GetSyncStatus retrieves sync status for an account
 func (r *AccountSyncPostgres) GetSyncStatus(ctx context.Context, accountID string) (*AccountSyncStatus, error) {
 	query := `
-		SELECT account_id, last_synced_at, next_cursor, sync_complete
+		SELECT account_id, last_synced_at, next_cursor, sync_complete,
+		       COALESCE(retry_count, 0), COALESCE(failed, false), COALESCE(last_error, '')
 		FROM dm_account_sync_status
 		WHERE account_id = $1
 	`
@@ -127,6 +138,9 @@ func (r *AccountSyncPostgres) GetSyncStatus(ctx context.Context, accountID strin
 		&status.LastSyncedAt,
 		&nextCursor,
 		&status.SyncComplete,
+		&status.RetryCount,
+		&status.Failed,
+		&status.LastError,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -172,13 +186,14 @@ func (r *AccountSyncPostgres) UpdateSyncStatus(ctx context.Context, status *Acco
 }
 
 // GetAccountsNeedingSync returns accounts that need conversation list sync
+// Excludes accounts marked as failed
 func (r *AccountSyncPostgres) GetAccountsNeedingSync(ctx context.Context, olderThan time.Duration, limit int) ([]string, error) {
 	query := `
 		SELECT ia.id::text
 		FROM instagram_accounts ia
 		LEFT JOIN dm_account_sync_status s ON ia.id = s.account_id
-		WHERE s.account_id IS NULL
-		   OR s.last_synced_at < $1
+		WHERE (s.account_id IS NULL OR s.last_synced_at < $1)
+		  AND (s.failed IS NULL OR s.failed = false)
 		ORDER BY COALESCE(s.last_synced_at, '1970-01-01'::timestamp) ASC
 		LIMIT $2
 	`
@@ -202,7 +217,44 @@ func (r *AccountSyncPostgres) GetAccountsNeedingSync(ctx context.Context, olderT
 	return accountIDs, nil
 }
 
+// IncrementRetryCount increments the retry count and marks as failed if max retries exceeded
+func (r *AccountSyncPostgres) IncrementRetryCount(ctx context.Context, accountID string, lastError string, maxRetries int) error {
+	query := `
+		INSERT INTO dm_account_sync_status (account_id, last_synced_at, retry_count, last_error, failed)
+		VALUES ($1, NOW(), 1, $2, 1 >= $3)
+		ON CONFLICT (account_id) DO UPDATE SET
+			retry_count = dm_account_sync_status.retry_count + 1,
+			last_error = EXCLUDED.last_error,
+			failed = (dm_account_sync_status.retry_count + 1) >= $3,
+			last_synced_at = NOW()
+	`
+
+	_, err := r.pool.Exec(ctx, query, accountID, lastError, maxRetries)
+	if err != nil {
+		return fmt.Errorf("incrementing retry count: %w", err)
+	}
+
+	return nil
+}
+
+// ResetRetryCount resets the retry count after a successful sync
+func (r *AccountSyncPostgres) ResetRetryCount(ctx context.Context, accountID string) error {
+	query := `
+		UPDATE dm_account_sync_status
+		SET retry_count = 0, failed = false, last_error = NULL
+		WHERE account_id = $1
+	`
+
+	_, err := r.pool.Exec(ctx, query, accountID)
+	if err != nil {
+		return fmt.Errorf("resetting retry count: %w", err)
+	}
+
+	return nil
+}
+
 // GetConversationsNeedingSync returns conversations that need message sync for an account
+// Excludes conversations marked as failed
 func (r *ConversationSyncPostgres) GetConversationsNeedingSync(ctx context.Context, accountID string, olderThan time.Duration, limit int) ([]string, error) {
 	query := `
 		SELECT c.id
@@ -210,6 +262,7 @@ func (r *ConversationSyncPostgres) GetConversationsNeedingSync(ctx context.Conte
 		LEFT JOIN dm_conversation_sync_status s ON c.id = s.conversation_id
 		WHERE c.account_id = $1
 		  AND (s.conversation_id IS NULL OR s.last_synced_at < $2)
+		  AND (s.failed IS NULL OR s.failed = false)
 		ORDER BY COALESCE(s.last_synced_at, '1970-01-01'::timestamp) ASC
 		LIMIT $3
 	`
@@ -231,4 +284,40 @@ func (r *ConversationSyncPostgres) GetConversationsNeedingSync(ctx context.Conte
 	}
 
 	return conversationIDs, nil
+}
+
+// IncrementRetryCount increments the retry count and marks as failed if max retries exceeded
+func (r *ConversationSyncPostgres) IncrementRetryCount(ctx context.Context, conversationID string, lastError string, maxRetries int) error {
+	query := `
+		INSERT INTO dm_conversation_sync_status (conversation_id, last_synced_at, retry_count, last_error, failed)
+		VALUES ($1, NOW(), 1, $2, 1 >= $3)
+		ON CONFLICT (conversation_id) DO UPDATE SET
+			retry_count = dm_conversation_sync_status.retry_count + 1,
+			last_error = EXCLUDED.last_error,
+			failed = (dm_conversation_sync_status.retry_count + 1) >= $3,
+			last_synced_at = NOW()
+	`
+
+	_, err := r.pool.Exec(ctx, query, conversationID, lastError, maxRetries)
+	if err != nil {
+		return fmt.Errorf("incrementing retry count: %w", err)
+	}
+
+	return nil
+}
+
+// ResetRetryCount resets the retry count after a successful sync
+func (r *ConversationSyncPostgres) ResetRetryCount(ctx context.Context, conversationID string) error {
+	query := `
+		UPDATE dm_conversation_sync_status
+		SET retry_count = 0, failed = false, last_error = NULL
+		WHERE conversation_id = $1
+	`
+
+	_, err := r.pool.Exec(ctx, query, conversationID)
+	if err != nil {
+		return fmt.Errorf("resetting retry count: %w", err)
+	}
+
+	return nil
 }
