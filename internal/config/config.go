@@ -73,6 +73,7 @@ type Scheduler struct {
 	CommentSyncInterval  time.Duration `yaml:"comment_sync_interval" env:"COMMENT_SYNC_INTERVAL" env-default:"5m"`
 	CommentSyncAge       time.Duration `yaml:"comment_sync_age" env:"COMMENT_SYNC_AGE" env-default:"10m"`
 	CommentSyncBatchSize int           `yaml:"comment_sync_batch_size" env:"COMMENT_SYNC_BATCH_SIZE" env-default:"10"`
+	CommentCacheMaxAge   time.Duration `yaml:"comment_cache_max_age" env:"COMMENT_CACHE_MAX_AGE" env-default:"5m"` // How old cache can be before API refresh
 
 	// Direct message sync settings
 	DirectSyncInterval  time.Duration `yaml:"direct_sync_interval" env:"DIRECT_SYNC_INTERVAL" env-default:"10m"`

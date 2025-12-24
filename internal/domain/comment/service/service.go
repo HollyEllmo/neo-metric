@@ -80,6 +80,12 @@ func NewWithRepo(ig InstagramClient, repo CommentRepository, syncRepo SyncStatus
 	}
 }
 
+// WithSyncMaxAge sets the maximum age of sync status before refreshing from Instagram
+func (s *Service) WithSyncMaxAge(d time.Duration) *Service {
+	s.syncMaxAge = d
+	return s
+}
+
 // GetCommentsInput represents input for getting comments
 type GetCommentsInput struct {
 	MediaID     string

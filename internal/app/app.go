@@ -263,9 +263,11 @@ func (a *App) initDomains(_ context.Context) error {
 	// Initialize comment domain
 	igCommentAdapter := &instagramCommentAdapter{igClient}
 	if commentRepo != nil && commentSyncRepo != nil {
-		a.commentService = commentService.NewWithRepo(igCommentAdapter, commentRepo, commentSyncRepo)
+		a.commentService = commentService.NewWithRepo(igCommentAdapter, commentRepo, commentSyncRepo).
+			WithSyncMaxAge(a.cfg.Scheduler.CommentCacheMaxAge)
 	} else {
-		a.commentService = commentService.New(igCommentAdapter)
+		a.commentService = commentService.New(igCommentAdapter).
+			WithSyncMaxAge(a.cfg.Scheduler.CommentCacheMaxAge)
 	}
 	a.commentPolicy = commentPolicy.New(a.commentService, accountProvider)
 
