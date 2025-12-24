@@ -12,6 +12,7 @@ import (
 type AccountProvider interface {
 	GetAccessToken(ctx context.Context, accountID string) (string, error)
 	GetInstagramUserID(ctx context.Context, accountID string) (string, error)
+	GetUsername(ctx context.Context, accountID string) (string, error)
 }
 
 // DirectSender sends direct messages
@@ -177,10 +178,18 @@ func (p *Policy) Reply(ctx context.Context, in ReplyInput) (*ReplyOutput, error)
 		return nil, err
 	}
 
+	// Get username for the account (to store with the reply)
+	username, err := p.accounts.GetUsername(ctx, in.AccountID)
+	if err != nil {
+		// Non-fatal: continue without username if we can't get it
+		username = ""
+	}
+
 	id, err := p.svc.Reply(ctx, service.ReplyInput{
 		CommentID:   in.CommentID,
 		AccessToken: accessToken,
 		Message:     in.Message,
+		Username:    username,
 	})
 	if err != nil {
 		return nil, err

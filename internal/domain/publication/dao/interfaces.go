@@ -88,4 +88,7 @@ type AccountRepository interface {
 
 	// GetInstagramUserID retrieves the Instagram user ID for an account
 	GetInstagramUserID(ctx context.Context, accountID string) (string, error)
+
+	// GetUsername retrieves the Instagram username for an account
+	GetUsername(ctx context.Context, accountID string) (string, error)
 }

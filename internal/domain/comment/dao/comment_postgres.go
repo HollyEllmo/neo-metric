@@ -462,14 +462,28 @@ func (r *CommentPostgres) GetStatistics(ctx context.Context, accountID string, t
 	}
 
 	// Get replied comments count (replies made by account owner)
+	// Count replies where:
+	// 1. username matches account owner's username, OR
+	// 2. comment has a parent_id pointing to a comment on the account's publications
+	//    (for cases where username is empty but it's still a reply from the owner)
 	repliedQuery := `
 		SELECT COUNT(*)
 		FROM comments c
-		JOIN publications p ON p.instagram_media_id = c.instagram_media_id
-		JOIN instagram_accounts ia ON ia.id = p.account_id
-		WHERE p.account_id = $1
-		  AND p.status = 'published'
-		  AND c.username = ia.username
+		JOIN instagram_accounts ia ON ia.id = $1
+		WHERE (
+			-- Case 1: Direct match by username on account's publications
+			(c.instagram_media_id IN (
+				SELECT instagram_media_id FROM publications
+				WHERE account_id = $1 AND status = 'published'
+			) AND c.username = ia.username)
+			OR
+			-- Case 2: Reply to a comment on account's publications (parent_id based)
+			(c.parent_id IS NOT NULL AND c.parent_id IN (
+				SELECT c2.id FROM comments c2
+				JOIN publications p ON p.instagram_media_id = c2.instagram_media_id
+				WHERE p.account_id = $1 AND p.status = 'published'
+			) AND (c.username = ia.username OR c.username = '' OR c.username IS NULL))
+		)
 	`
 	if err := r.pool.QueryRow(ctx, repliedQuery, accountID).Scan(&stats.RepliedComments); err != nil {
 		return nil, fmt.Errorf("counting replied comments: %w", err)

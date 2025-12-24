@@ -32,6 +32,7 @@ type PublishOutput struct {
 type AccountProvider interface {
 	GetAccessToken(ctx context.Context, accountID string) (string, error)
 	GetInstagramUserID(ctx context.Context, accountID string) (string, error)
+	GetUsername(ctx context.Context, accountID string) (string, error)
 }
 
 // Policy orchestrates publication use-cases

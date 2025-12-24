@@ -353,6 +353,7 @@ type ReplyInput struct {
 	CommentID   string
 	AccessToken string
 	Message     string
+	Username    string // Username of the account owner making the reply
 }
 
 // Reply posts a reply to a comment
@@ -371,6 +372,7 @@ func (s *Service) Reply(ctx context.Context, in ReplyInput) (string, error) {
 		comment := &entity.Comment{
 			ID:        id,
 			ParentID:  in.CommentID,
+			Username:  in.Username,
 			Text:      in.Message,
 			Timestamp: time.Now(),
 		}

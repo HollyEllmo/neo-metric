@@ -492,6 +492,10 @@ func (a *accountProviderAdapter) GetInstagramUserID(ctx context.Context, account
 	return a.repo.GetInstagramUserID(ctx, accountID)
 }
 
+func (a *accountProviderAdapter) GetUsername(ctx context.Context, accountID string) (string, error) {
+	return a.repo.GetUsername(ctx, accountID)
+}
+
 // accountListerAdapter adapts AccountPostgres to httpcontroller.AccountLister
 type accountListerAdapter struct {
 	repo *dao.AccountPostgres

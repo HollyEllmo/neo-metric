@@ -61,6 +61,26 @@ func (r *AccountPostgres) GetInstagramUserID(ctx context.Context, accountID stri
 	return userID, nil
 }
 
+// GetUsername retrieves the Instagram username for an account
+func (r *AccountPostgres) GetUsername(ctx context.Context, accountID string) (string, error) {
+	query := `
+		SELECT username
+		FROM instagram_accounts
+		WHERE id = $1 AND deleted_at IS NULL
+	`
+
+	var username string
+	err := r.pool.QueryRow(ctx, query, accountID).Scan(&username)
+	if err == pgx.ErrNoRows {
+		return "", fmt.Errorf("account %s not found", accountID)
+	}
+	if err != nil {
+		return "", fmt.Errorf("querying username: %w", err)
+	}
+
+	return username, nil
+}
+
 // GetAccountByInstagramID retrieves account info by Instagram ID
 func (r *AccountPostgres) GetAccountByInstagramID(ctx context.Context, instagramID string) (*AccountInfo, error) {
 	query := `
