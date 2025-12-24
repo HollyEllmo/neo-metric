@@ -13,7 +13,7 @@ import (
 const (
 	baseURL   = "http://localhost:8080/api/v1"
 	accountID = "7" // cyber.uz
-	imageURL  = "https://s3.sevendev.uz/local/2025/12/22/1dde510b-dc4e-47d7-a11c-68b21b4ba806.png"
+	imageURL  = "https://s3.sevendev.uz/local/2025/12/24/0eb0ad1e-9f02-4f69-bbf1-ec57b82939bf.png"
 )
 
 type CreatePublicationRequest struct {
@@ -437,7 +437,7 @@ func TestPublicationPublish(t *testing.T) {
 	}
 
 	t.Run("publish draft to Instagram", func(t *testing.T) {
-		pub := createTestPublication(t, "Test publish #e2e")
+		pub := createTestPublication(t, "Рюкзак для фотографов")
 
 		publishURL := fmt.Sprintf("%s/publications/%s/publish", baseURL, pub.ID)
 		req, _ := http.NewRequest(http.MethodPost, publishURL, nil)

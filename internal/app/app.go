@@ -553,12 +553,27 @@ func (a *instagramCommentAdapter) GetComments(ctx context.Context, mediaID, acce
 
 	comments := make([]commentEntity.Comment, len(out.Data))
 	for i, c := range out.Data {
+		var timestamp time.Time
+		if c.Timestamp != "" {
+			// Instagram uses format "2025-12-24T07:53:58+0000", try multiple formats
+			for _, layout := range []string{
+				"2006-01-02T15:04:05-0700",
+				"2006-01-02T15:04:05Z0700",
+				time.RFC3339,
+			} {
+				if t, err := time.Parse(layout, c.Timestamp); err == nil {
+					timestamp = t
+					break
+				}
+			}
+		}
+
 		comments[i] = commentEntity.Comment{
 			ID:           c.ID,
 			MediaID:      mediaID,
 			Username:     c.Username,
 			Text:         c.Text,
-			Timestamp:    c.Timestamp,
+			Timestamp:    timestamp,
 			LikeCount:    c.LikeCount,
 			IsHidden:     c.Hidden,
 			RepliesCount: c.RepliesCount,
@@ -592,12 +607,26 @@ func (a *instagramCommentAdapter) GetCommentReplies(ctx context.Context, comment
 
 	comments := make([]commentEntity.Comment, len(out.Data))
 	for i, c := range out.Data {
+		var timestamp time.Time
+		if c.Timestamp != "" {
+			for _, layout := range []string{
+				"2006-01-02T15:04:05-0700",
+				"2006-01-02T15:04:05Z0700",
+				time.RFC3339,
+			} {
+				if t, err := time.Parse(layout, c.Timestamp); err == nil {
+					timestamp = t
+					break
+				}
+			}
+		}
+
 		comments[i] = commentEntity.Comment{
 			ID:        c.ID,
 			ParentID:  commentID,
 			Username:  c.Username,
 			Text:      c.Text,
-			Timestamp: c.Timestamp,
+			Timestamp: timestamp,
 			LikeCount: c.LikeCount,
 			IsHidden:  c.Hidden,
 		}

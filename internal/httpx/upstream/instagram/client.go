@@ -428,13 +428,13 @@ func joinStrings(strs []string, sep string) string {
 
 // CommentData represents a comment from Instagram API
 type CommentData struct {
-	ID           string    `json:"id"`
-	Text         string    `json:"text"`
-	Username     string    `json:"username"`
-	Timestamp    time.Time `json:"timestamp"`
-	LikeCount    int       `json:"like_count"`
-	Hidden       bool      `json:"hidden"`
-	RepliesCount int       `json:"replies_count,omitempty"`
+	ID           string `json:"id"`
+	Text         string `json:"text"`
+	Username     string `json:"username"`
+	Timestamp    string `json:"timestamp"`
+	LikeCount    int    `json:"like_count"`
+	Hidden       bool   `json:"hidden"`
+	RepliesCount int    `json:"replies_count,omitempty"`
 }
 
 // GetCommentsInput represents input for getting comments
