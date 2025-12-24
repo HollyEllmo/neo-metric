@@ -200,8 +200,8 @@ paths:
             schema:
               $ref: '#/components/schemas/CreatePublicationRequest'
             examples:
-              post:
-                summary: Создание поста
+              post_scheduled:
+                summary: Создание отложенного поста
                 value:
                   account_id: "acc_123"
                   type: "post"
@@ -211,6 +211,17 @@ paths:
                       type: "image"
                       order: 0
                   scheduled_at: "2025-12-25T10:00:00Z"
+              post_immediate:
+                summary: Мгновенная публикация поста
+                value:
+                  account_id: "acc_123"
+                  type: "post"
+                  caption: "Пост публикуется сразу! #instagram"
+                  media:
+                    - url: "https://example.com/image1.jpg"
+                      type: "image"
+                      order: 0
+                  publish_now: true
               story:
                 summary: Создание истории
                 value:
@@ -221,15 +232,32 @@ paths:
                       type: "image"
                       order: 0
               reel:
-                summary: Создание Reel
+                summary: Создание Reel с настройками
                 value:
                   account_id: "acc_123"
                   type: "reel"
-                  caption: "Мой первый Reel!"
+                  caption: "Мой первый Reel! #reels"
                   media:
                     - url: "https://example.com/video.mp4"
                       type: "video"
                       order: 0
+                  reel_options:
+                    share_to_feed: true
+                    cover_url: "https://example.com/cover.jpg"
+                    thumb_offset: 5000
+                    audio_name: "Оригинальный звук"
+                    collaborator_usernames: ["user1"]
+              reel_simple:
+                summary: Создание простого Reel
+                value:
+                  account_id: "acc_123"
+                  type: "reel"
+                  caption: "Простой Reel без опций"
+                  media:
+                    - url: "https://example.com/video.mp4"
+                      type: "video"
+                      order: 0
+                  publish_now: true
               carousel:
                 summary: Создание карусели
                 value:
@@ -1716,6 +1744,8 @@ components:
           minItems: 1
           maxItems: 10
           description: Массив медиафайлов
+        reel_options:
+          $ref: '#/components/schemas/ReelOptions'
         scheduled_at:
           type: string
           format: date-time
@@ -1794,6 +1824,56 @@ components:
             Если true - публикация будет сразу опубликована в Instagram.
             Нельзя использовать вместе с scheduled_at.
           example: false
+        reel_options:
+          $ref: '#/components/schemas/ReelOptions'
+
+    ReelOptions:
+      type: object
+      description: Дополнительные настройки для публикации Reels
+      properties:
+        share_to_feed:
+          type: boolean
+          default: true
+          description: |
+            Показывать ли Reel в основной ленте профиля.
+            По умолчанию true.
+          example: true
+        cover_url:
+          type: string
+          format: uri
+          description: |
+            URL изображения для кастомной обложки Reel.
+            Если не указано - используется автоматически сгенерированная обложка.
+          example: "https://example.com/cover.jpg"
+        thumb_offset:
+          type: integer
+          minimum: 0
+          description: |
+            Смещение в миллисекундах для автоматически сгенерированной обложки.
+            Определяет, какой кадр видео будет использован как обложка.
+          example: 5000
+        audio_name:
+          type: string
+          maxLength: 100
+          description: |
+            Название аудио для оригинального звука Reel.
+            Отображается под видео в Instagram.
+          example: "Оригинальный звук"
+        location_id:
+          type: string
+          description: |
+            Facebook Page ID для гео-тега.
+            Можно получить через Facebook Places API.
+          example: "123456789"
+        collaborator_usernames:
+          type: array
+          items:
+            type: string
+          maxItems: 3
+          description: |
+            Список Instagram username для приглашения как коллабораторов.
+            Максимум 3 пользователя.
+          example: ["user1", "user2"]
 
     UpdatePublicationRequest:
       type: object

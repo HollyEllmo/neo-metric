@@ -123,6 +123,14 @@ type CreateMediaContainerInput struct {
 	Caption     string
 	IsCarousel  bool     // True for carousel items
 	Children    []string // Container IDs for carousel
+
+	// Reel-specific options
+	ShareToFeed           *bool    // Whether reel appears in profile grid (default: true)
+	CoverURL              string   // URL for custom cover image
+	ThumbOffset           *int     // Offset in ms for auto-generated thumbnail
+	AudioName             string   // Custom audio name for original audio
+	LocationID            string   // Facebook Page ID for location tagging
+	CollaboratorUsernames []string // Instagram usernames to invite as collaborators
 }
 
 // CreateMediaContainerOutput represents output from creating a media container
@@ -150,6 +158,29 @@ func (c *Client) CreateMediaContainer(ctx context.Context, in CreateMediaContain
 	switch in.MediaType {
 	case MediaTypeReels:
 		params.Set("media_type", "REELS")
+		// Reel-specific options
+		if in.ShareToFeed != nil {
+			if *in.ShareToFeed {
+				params.Set("share_to_feed", "true")
+			} else {
+				params.Set("share_to_feed", "false")
+			}
+		}
+		if in.CoverURL != "" {
+			params.Set("cover_url", in.CoverURL)
+		}
+		if in.ThumbOffset != nil {
+			params.Set("thumb_offset", fmt.Sprintf("%d", *in.ThumbOffset))
+		}
+		if in.AudioName != "" {
+			params.Set("audio_name", in.AudioName)
+		}
+		if in.LocationID != "" {
+			params.Set("location_id", in.LocationID)
+		}
+		if len(in.CollaboratorUsernames) > 0 {
+			params.Set("collaborators", joinStrings(in.CollaboratorUsernames, ","))
+		}
 	case MediaTypeStories:
 		params.Set("media_type", "STORIES")
 	case MediaTypeCarousel:

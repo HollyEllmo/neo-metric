@@ -30,6 +30,7 @@ type CreateInput struct {
 	Type        entity.PublicationType
 	Caption     string
 	Media       []MediaInput
+	ReelOptions *entity.ReelOptions // Optional settings for Reels
 	ScheduledAt *time.Time
 }
 
@@ -69,6 +70,7 @@ func (s *Service) CreatePublication(ctx context.Context, in CreateInput) (*entit
 		Status:      status,
 		Caption:     in.Caption,
 		Media:       mediaItems,
+		ReelOptions: in.ReelOptions,
 		ScheduledAt: in.ScheduledAt,
 		CreatedAt:   now,
 		UpdatedAt:   now,

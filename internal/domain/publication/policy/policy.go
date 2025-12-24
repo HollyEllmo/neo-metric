@@ -57,6 +57,7 @@ type CreatePublicationInput struct {
 	Type        entity.PublicationType
 	Caption     string
 	Media       []MediaInput
+	ReelOptions *entity.ReelOptions // Optional settings for Reels
 	ScheduledAt *time.Time
 	PublishNow  bool // If true, publish immediately after creation
 }
@@ -95,6 +96,7 @@ func (p *Policy) CreatePublication(ctx context.Context, in CreatePublicationInpu
 		Type:        in.Type,
 		Caption:     in.Caption,
 		Media:       mediaInput,
+		ReelOptions: in.ReelOptions,
 		ScheduledAt: in.ScheduledAt,
 	})
 	if err != nil {

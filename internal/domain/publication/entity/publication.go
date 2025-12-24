@@ -40,6 +40,22 @@ type MediaItem struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// ReelOptions contains optional settings for Reel publishing
+type ReelOptions struct {
+	// ShareToFeed controls whether the reel appears in the profile grid (default: true)
+	ShareToFeed *bool `json:"share_to_feed,omitempty"`
+	// CoverURL is an optional URL for a custom cover image
+	CoverURL string `json:"cover_url,omitempty"`
+	// ThumbOffset is the time offset in milliseconds for auto-generated thumbnail
+	ThumbOffset *int `json:"thumb_offset,omitempty"`
+	// AudioName is the custom audio name for original audio
+	AudioName string `json:"audio_name,omitempty"`
+	// LocationID is Facebook Page ID for location tagging
+	LocationID string `json:"location_id,omitempty"`
+	// CollaboratorUsernames are Instagram usernames to invite as collaborators
+	CollaboratorUsernames []string `json:"collaborator_usernames,omitempty"`
+}
+
 // Publication represents an Instagram publication (post, story, or reel)
 type Publication struct {
 	ID               string            `json:"id"`
@@ -49,6 +65,7 @@ type Publication struct {
 	Status           PublicationStatus `json:"status"`
 	Caption          string            `json:"caption"`
 	Media            []MediaItem       `json:"media"`
+	ReelOptions      *ReelOptions      `json:"reel_options,omitempty"` // Optional settings for Reels
 	ScheduledAt      *time.Time        `json:"scheduled_at,omitempty"`
 	PublishedAt      *time.Time        `json:"published_at,omitempty"`
 	ErrorMessage     string            `json:"error_message,omitempty"`

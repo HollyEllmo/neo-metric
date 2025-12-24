@@ -133,6 +133,16 @@ func (p *Publisher) publishReel(ctx context.Context, in PublishInput) (*PublishO
 		Caption:     pub.Caption,
 	}
 
+	// Apply reel-specific options if provided
+	if pub.ReelOptions != nil {
+		containerIn.ShareToFeed = pub.ReelOptions.ShareToFeed
+		containerIn.CoverURL = pub.ReelOptions.CoverURL
+		containerIn.ThumbOffset = pub.ReelOptions.ThumbOffset
+		containerIn.AudioName = pub.ReelOptions.AudioName
+		containerIn.LocationID = pub.ReelOptions.LocationID
+		containerIn.CollaboratorUsernames = pub.ReelOptions.CollaboratorUsernames
+	}
+
 	containerOut, err := p.client.CreateMediaContainer(ctx, containerIn)
 	if err != nil {
 		return nil, fmt.Errorf("creating reel container: %w", err)

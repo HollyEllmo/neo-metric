@@ -59,6 +59,7 @@ type CreateRequest struct {
 	Type        string              `json:"type"` // post, story, reel
 	Caption     string              `json:"caption"`
 	Media       []MediaRequest      `json:"media"`
+	ReelOptions *ReelOptionsRequest `json:"reel_options,omitempty"` // Optional settings for Reels
 	ScheduledAt *string             `json:"scheduled_at,omitempty"` // RFC3339 format
 	PublishNow  bool                `json:"publish_now,omitempty"`  // Publish immediately after creation
 }
@@ -68,6 +69,16 @@ type MediaRequest struct {
 	URL   string `json:"url"`
 	Type  string `json:"type"` // image, video
 	Order int    `json:"order"`
+}
+
+// ReelOptionsRequest represents optional settings for Reel publishing
+type ReelOptionsRequest struct {
+	ShareToFeed           *bool    `json:"share_to_feed,omitempty"`   // Show in profile grid (default: true)
+	CoverURL              string   `json:"cover_url,omitempty"`       // URL for custom cover image
+	ThumbOffset           *int     `json:"thumb_offset,omitempty"`    // Offset in ms for auto-thumbnail
+	AudioName             string   `json:"audio_name,omitempty"`      // Custom audio name
+	LocationID            string   `json:"location_id,omitempty"`     // Facebook Page ID for location
+	CollaboratorUsernames []string `json:"collaborator_usernames,omitempty"` // Usernames to invite as collaborators
 }
 
 // Create handles POST /publications
@@ -128,11 +139,25 @@ func (h *PublicationHandler) Create() http.HandlerFunc {
 			}
 		}
 
+		// Build reel options if provided
+		var reelOptions *entity.ReelOptions
+		if req.ReelOptions != nil {
+			reelOptions = &entity.ReelOptions{
+				ShareToFeed:           req.ReelOptions.ShareToFeed,
+				CoverURL:              req.ReelOptions.CoverURL,
+				ThumbOffset:           req.ReelOptions.ThumbOffset,
+				AudioName:             req.ReelOptions.AudioName,
+				LocationID:            req.ReelOptions.LocationID,
+				CollaboratorUsernames: req.ReelOptions.CollaboratorUsernames,
+			}
+		}
+
 		out, err := h.policy.CreatePublication(r.Context(), policy.CreatePublicationInput{
 			AccountID:   req.AccountID,
 			Type:        pubType,
 			Caption:     req.Caption,
 			Media:       mediaInput,
+			ReelOptions: reelOptions,
 			ScheduledAt: scheduledAt,
 			PublishNow:  req.PublishNow,
 		})
