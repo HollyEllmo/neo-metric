@@ -21,6 +21,8 @@ type DirectPolicy interface {
 	GetMessages(ctx context.Context, in policy.GetMessagesInput) (*policy.GetMessagesOutput, error)
 	SendMessage(ctx context.Context, in policy.SendMessageInput) (*policy.SendMessageOutput, error)
 	SendMediaMessage(ctx context.Context, in policy.SendMediaMessageInput) (*policy.SendMessageOutput, error)
+	SyncConversations(ctx context.Context, in policy.SyncConversationsInput) error
+	SyncMessages(ctx context.Context, in policy.SyncMessagesInput) error
 	GetStatistics(ctx context.Context, in policy.GetStatisticsInput) (*entity.Statistics, error)
 	GetHeatmap(ctx context.Context, in policy.GetHeatmapInput) (*entity.Heatmap, error)
 }
@@ -44,8 +46,14 @@ func (h *DirectHandler) RegisterRoutes(r chi.Router) {
 		// Search conversations
 		r.Get("/conversations/search", h.SearchConversations())
 
+		// Manually sync conversations
+		r.Post("/conversations/sync", h.SyncConversations())
+
 		// Get messages in a conversation
 		r.Get("/conversations/{conversationId}/messages", h.GetMessages())
+
+		// Manually sync messages for a conversation
+		r.Post("/conversations/{conversationId}/messages/sync", h.SyncMessages())
 
 		// Send text message
 		r.Post("/conversations/{conversationId}/messages", h.SendMessage())
@@ -317,6 +325,71 @@ func (h *DirectHandler) SendMediaMessage() http.HandlerFunc {
 		}
 
 		response.Created(w, SendMessageResponse{MessageID: result.MessageID})
+	}
+}
+
+// SyncConversationsRequest represents the request body for syncing conversations
+type SyncConversationsRequest struct {
+	AccountID string `json:"account_id"`
+}
+
+// SyncConversations handles POST /direct/conversations/sync
+func (h *DirectHandler) SyncConversations() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req SyncConversationsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			response.BadRequest(w, "invalid JSON")
+			return
+		}
+
+		if req.AccountID == "" {
+			response.BadRequest(w, "account_id is required")
+			return
+		}
+
+		err := h.policy.SyncConversations(r.Context(), policy.SyncConversationsInput{
+			AccountID: req.AccountID,
+		})
+		if err != nil {
+			handleDirectError(w, err)
+			return
+		}
+
+		response.OK(w, map[string]string{"status": "synced"})
+	}
+}
+
+// SyncMessagesRequest represents the request body for syncing messages
+type SyncMessagesRequest struct {
+	AccountID string `json:"account_id"`
+}
+
+// SyncMessages handles POST /direct/conversations/{conversationId}/messages/sync
+func (h *DirectHandler) SyncMessages() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		conversationID := chi.URLParam(r, "conversationId")
+
+		var req SyncMessagesRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			response.BadRequest(w, "invalid JSON")
+			return
+		}
+
+		if req.AccountID == "" {
+			response.BadRequest(w, "account_id is required")
+			return
+		}
+
+		err := h.policy.SyncMessages(r.Context(), policy.SyncMessagesInput{
+			AccountID:      req.AccountID,
+			ConversationID: conversationID,
+		})
+		if err != nil {
+			handleDirectError(w, err)
+			return
+		}
+
+		response.OK(w, map[string]string{"status": "synced"})
 	}
 }
 

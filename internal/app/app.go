@@ -1069,6 +1069,10 @@ func (a *directConvSyncRepoAdapter) GetConversationsNeedingSync(ctx context.Cont
 	return a.repo.GetConversationsNeedingSync(ctx, accountID, olderThan, limit)
 }
 
+func (a *directConvSyncRepoAdapter) DeleteSyncStatus(ctx context.Context, conversationID string) error {
+	return a.repo.DeleteSyncStatus(ctx, conversationID)
+}
+
 // directAccountSyncRepoAdapter adapts directDao.AccountSyncPostgres to directService.AccountSyncRepository
 type directAccountSyncRepoAdapter struct {
 	repo *directDao.AccountSyncPostgres

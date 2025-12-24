@@ -22,6 +22,8 @@ type DirectService interface {
 	GetMessages(ctx context.Context, in service.GetMessagesInput) (*service.GetMessagesOutput, error)
 	SendMessage(ctx context.Context, in service.SendMessageInput) (*service.SendMessageOutput, error)
 	SendMediaMessage(ctx context.Context, in service.SendMediaMessageInput) (*service.SendMessageOutput, error)
+	SyncConversations(ctx context.Context, accountID, userID, accessToken string) error
+	SyncMessages(ctx context.Context, conversationID, userID, accessToken string) error
 	GetStatistics(ctx context.Context, in service.GetStatisticsInput) (*entity.Statistics, error)
 	GetHeatmap(ctx context.Context, in service.GetHeatmapInput) (*entity.Heatmap, error)
 }
@@ -264,4 +266,45 @@ func (p *Policy) GetHeatmap(ctx context.Context, in GetHeatmapInput) (*entity.He
 		StartDate: in.StartDate,
 		EndDate:   in.EndDate,
 	})
+}
+
+// SyncConversationsInput represents input for syncing conversations
+type SyncConversationsInput struct {
+	AccountID string
+}
+
+// SyncConversations manually triggers conversation sync for an account
+func (p *Policy) SyncConversations(ctx context.Context, in SyncConversationsInput) error {
+	accessToken, err := p.accounts.GetAccessToken(ctx, in.AccountID)
+	if err != nil {
+		return fmt.Errorf("getting access token: %w", err)
+	}
+
+	userID, err := p.accounts.GetInstagramUserID(ctx, in.AccountID)
+	if err != nil {
+		return fmt.Errorf("getting user ID: %w", err)
+	}
+
+	return p.svc.SyncConversations(ctx, in.AccountID, userID, accessToken)
+}
+
+// SyncMessagesInput represents input for syncing messages
+type SyncMessagesInput struct {
+	AccountID      string
+	ConversationID string
+}
+
+// SyncMessages manually triggers message sync for a specific conversation
+func (p *Policy) SyncMessages(ctx context.Context, in SyncMessagesInput) error {
+	accessToken, err := p.accounts.GetAccessToken(ctx, in.AccountID)
+	if err != nil {
+		return fmt.Errorf("getting access token: %w", err)
+	}
+
+	userID, err := p.accounts.GetInstagramUserID(ctx, in.AccountID)
+	if err != nil {
+		return fmt.Errorf("getting user ID: %w", err)
+	}
+
+	return p.svc.SyncMessages(ctx, in.ConversationID, userID, accessToken)
 }

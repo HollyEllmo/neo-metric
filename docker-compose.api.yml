@@ -18,12 +18,27 @@ services:
     environment:
       - SERVER_HOST=0.0.0.0
       - SERVER_PORT=8080
+      # Override DATABASE_URL to use container name instead of localhost
+      - DATABASE_URL=postgres://postgres:postgres@neo-metric-postgres:5432/analytics?sslmode=disable
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/api/v1/healthz"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 10s
-    # Optional: connect to infrastructure network if running postgres/minio locally
-    # networks:
-    #   - neo-metric-network
+    networks:
+      - neo-metric-network
+    depends_on:
+      - postgres-check
+
+  # Dummy service to check if postgres is running (from main docker-compose.yml)
+  postgres-check:
+    image: busybox
+    container_name: neo-metric-postgres-check
+    command: sh -c "echo 'Checking postgres network...' && sleep 1"
+    networks:
+      - neo-metric-network
+
+networks:
+  neo-metric-network:
+    external: true
