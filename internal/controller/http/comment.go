@@ -22,6 +22,7 @@ type CommentPolicy interface {
 	Delete(ctx context.Context, in policy.DeleteInput) error
 	Hide(ctx context.Context, in policy.HideInput) error
 	GetStatistics(ctx context.Context, in policy.GetStatisticsInput) (*entity.CommentStatistics, error)
+	SyncComments(ctx context.Context, in policy.SyncCommentsInput) error
 }
 
 // CommentHandler handles HTTP requests for comments
@@ -39,6 +40,9 @@ func (h *CommentHandler) RegisterRoutes(r chi.Router) {
 	r.Route("/comments", func(r chi.Router) {
 		// Get comments for a media
 		r.Get("/media/{mediaId}", h.GetComments())
+
+		// Sync comments for a media
+		r.Post("/media/{mediaId}/sync", h.SyncComments())
 
 		// Get statistics
 		r.Get("/statistics", h.GetStatistics())
@@ -343,6 +347,40 @@ func (h *CommentHandler) GetStatistics() http.HandlerFunc {
 		}
 
 		response.OK(w, stats)
+	}
+}
+
+// SyncCommentsRequest represents the request body for syncing comments
+type SyncCommentsRequest struct {
+	AccountID string `json:"account_id"`
+}
+
+// SyncComments handles POST /comments/media/{mediaId}/sync
+func (h *CommentHandler) SyncComments() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		mediaID := chi.URLParam(r, "mediaId")
+
+		var req SyncCommentsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			response.BadRequest(w, "invalid JSON")
+			return
+		}
+
+		if req.AccountID == "" {
+			response.BadRequest(w, "account_id is required")
+			return
+		}
+
+		err := h.policy.SyncComments(r.Context(), policy.SyncCommentsInput{
+			AccountID: req.AccountID,
+			MediaID:   mediaID,
+		})
+		if err != nil {
+			handleCommentError(w, err)
+			return
+		}
+
+		response.OK(w, map[string]string{"status": "synced"})
 	}
 }
 

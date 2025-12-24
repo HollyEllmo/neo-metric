@@ -727,6 +727,43 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /comments/media/{mediaId}/sync:
+    post:
+      tags:
+        - Comments
+      summary: Синхронизировать комментарии
+      description: |
+        Вручную запустить синхронизацию комментариев для указанного медиа с Instagram.
+
+        Используйте этот endpoint, если нужно немедленно получить новые комментарии,
+        не дожидаясь плановой синхронизации.
+      operationId: syncComments
+      parameters:
+        - name: mediaId
+          in: path
+          required: true
+          description: ID медиа в Instagram
+          schema:
+            type: string
+          example: "17895695668004550"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncRequest'
+      responses:
+        '200':
+          description: Синхронизация выполнена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /comments/{commentId}/replies:
     get:
       tags:

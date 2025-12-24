@@ -29,6 +29,7 @@ type CommentService interface {
 	Hide(ctx context.Context, in service.HideInput) error
 	GetStatistics(ctx context.Context, accountID string, topPostsLimit int) (*entity.CommentStatistics, error)
 	GetComment(ctx context.Context, commentID string) (*entity.Comment, error)
+	SyncMediaComments(ctx context.Context, mediaID, accessToken string) error
 }
 
 // Policy handles business policies for comments
@@ -259,4 +260,20 @@ type GetStatisticsInput struct {
 // GetStatistics retrieves aggregated comment statistics for an account
 func (p *Policy) GetStatistics(ctx context.Context, in GetStatisticsInput) (*entity.CommentStatistics, error) {
 	return p.svc.GetStatistics(ctx, in.AccountID, in.TopPostsLimit)
+}
+
+// SyncCommentsInput represents input for syncing comments
+type SyncCommentsInput struct {
+	AccountID string
+	MediaID   string
+}
+
+// SyncComments manually syncs comments for a specific media
+func (p *Policy) SyncComments(ctx context.Context, in SyncCommentsInput) error {
+	accessToken, err := p.accounts.GetAccessToken(ctx, in.AccountID)
+	if err != nil {
+		return err
+	}
+
+	return p.svc.SyncMediaComments(ctx, in.MediaID, accessToken)
 }
