@@ -1114,12 +1114,13 @@ paths:
             default: 50
             minimum: 1
             maximum: 100
-        - name: before
+        - name: offset
           in: query
-          description: Получить сообщения до указанного timestamp
+          description: Смещение для пагинации
           schema:
-            type: string
-            format: date-time
+            type: integer
+            default: 0
+            minimum: 0
       responses:
         '200':
           description: Список сообщений
@@ -2294,12 +2295,17 @@ components:
       type: object
       required:
         - messages
+        - total
         - has_more
       properties:
         messages:
           type: array
           items:
             $ref: '#/components/schemas/Message'
+        total:
+          type: integer
+          description: Общее количество сообщений в диалоге
+          example: 150
         has_more:
           type: boolean
           description: Есть ли ещё сообщения
@@ -2308,13 +2314,18 @@ components:
       type: object
       required:
         - account_id
-        - text
+        - recipient_id
+        - message
       properties:
         account_id:
           type: string
           description: ID аккаунта
           example: "acc_123"
-        text:
+        recipient_id:
+          type: string
+          description: ID получателя (Instagram user ID)
+          example: "17841400123456789"
+        message:
           type: string
           description: Текст сообщения
           maxLength: 1000
